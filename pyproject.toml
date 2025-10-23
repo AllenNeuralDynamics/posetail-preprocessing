@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "posetail-preprocessing"
+version = "0.8.0"
+dependencies = [
+    "aniposelib>=0.7.0",
+    "easydict==1.13",
+    "json5==0.12.1",
+    "opencv-python==4.9.0.80",
+    "toml==0.10.2"
+]
+requires-python = ">=3.10"
+description = "a preprocessing library to curate training data from various open source datasets for a posetail model"
+readme = "README.md"
+license = {text = "BSD-3-Clause"}
+keywords = ["data preprocessing", "pose estimation", "animal pose estimation"]
+classifiers = [
+    'Intended Audience :: Science/Research',
+    'Topic :: Scientific/Engineering :: Artificial Intelligence',
+    'License :: OSI Approved :: BSD License',
+    'Programming Language :: Python :: 3'
+]
+
+
+[project.urls]
+Repository = "https://github.com/AllenNeuralDynamics/posetail-preprocessing"
