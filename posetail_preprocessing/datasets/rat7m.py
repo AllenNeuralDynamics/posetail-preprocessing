@@ -69,6 +69,7 @@ class Rat7MDataset(BaseDataset):
 
         coords = np.array(coords)
         pose3d = np.expand_dims(coords.swapaxes(0, 1), axis = 0) # (n_subjects, time, bodyparts, 3)
+
         pose3d_dict = {'pose': pose3d, 'keypoints': bodyparts}
 
         return pose3d_dict
@@ -169,12 +170,13 @@ class Rat7MDataset(BaseDataset):
         cam_names = np.unique([os.path.splitext(os.path.basename(video_path))[0].split('-')[2]
                                for video_path in video_paths])
         
-        start_frames = [int(os.path.splitext(os.path.basename(video_path))[0].split('-')[3])
-                    for video_path in video_paths]
+        start_frames = np.unique([int(os.path.splitext(os.path.basename(video_path))[0].split('-')[3])
+                    for video_path in video_paths])
         
         # load and format the 3d annotations
         pose_dict = self.load_pose3d(calib_path)
         pose = pose_dict['pose']
+        print(session_path)
 
         # traverse the trials
         for start_frame in start_frames: 
@@ -189,8 +191,13 @@ class Rat7MDataset(BaseDataset):
                     # print('skipping...')
                     continue
 
+            # skip if there aren't many frames remaining
+            # NOTE: could also use a threshold
+            if start_frame >= pose.shape[1]: 
+                continue
+
             # load and format the 3d annotations
-            pose_dict_subset = {'pose': pose[start_frame: start_frame + 3500, :, :], 
+            pose_dict_subset = {'pose': pose[:, start_frame: start_frame + 3500, :, :], 
                                 'keypoints': pose_dict['keypoints']}
             io.save_npz(pose_dict_subset, trial_outpath, fname = 'pose3d')
 
