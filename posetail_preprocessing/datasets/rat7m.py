@@ -176,7 +176,6 @@ class Rat7MDataset(BaseDataset):
         # load and format the 3d annotations
         pose_dict = self.load_pose3d(calib_path)
         pose = pose_dict['pose']
-        print(session_path)
 
         # traverse the trials
         for start_frame in start_frames: 
