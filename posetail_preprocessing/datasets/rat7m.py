@@ -96,9 +96,46 @@ class Rat7MDataset(BaseDataset):
 
         return df
 
-    def select_train_set(self):
-        # TODO
-        pass 
+    def select_train_set(self, n_train_videos = 10, seed = 3):
+        # randomly sample n training videos, distributed 
+        # across training subjects
+
+        np.random.seed(seed)
+
+        # filter metadata for training videos
+        self.metadata.loc[:, 'include'] = False
+        self.metadata.loc[self.metadata['subject'] == 's5', 'split'] = 'test'
+        train_df = self.metadata[self.metadata['split'] == 'train']
+
+        # determine number of videos to sample from 
+        # each group
+        sessions = np.unique(train_df['session'])
+        sample_dict = {session: 0 for session in sessions}
+        n = 0
+
+        while n < n_train_videos:
+
+            for session in sessions: 
+                sample_dict[session] += 1
+                n += 1
+
+                if n >= n_train_videos: 
+                    break
+
+        # sample videos for training  
+        train_ixs = []
+
+        for session in sessions: 
+
+            df_subset = self.metadata[self.metadata['session'] == session]
+            n_to_sample = sample_dict[session]
+            ixs = np.random.choice(df_subset.index, n_to_sample, replace = False)
+            train_ixs.extend(ixs)   
+
+        train_ixs = np.array(train_ixs)
+        self.metadata.loc[train_ixs, 'include'] = True
+
+        return self.metadata
 
     def select_test_set(self):  
         # TODO
@@ -125,6 +162,10 @@ class Rat7MDataset(BaseDataset):
             os.makedirs(outpath, exist_ok = True)
             self._process_session(data_path, session_path, outpath, session)
 
+            # clean up any empty directories
+            if len(os.listdir(outpath)) == 0:
+                os.rmdir(outpath)
+
     
     def _get_videos(self, data_path, session_path, session): 
 
@@ -147,12 +188,12 @@ class Rat7MDataset(BaseDataset):
             metadata_dict = {
                     'id': f'{session}_{start_frame}',
                     'session': session, 
-                    'subject': session, 
+                    'subject': session.split('-')[0], 
                     'trial': 1,
                     'n_cameras': n_cams, 
                     'n_frames': n_frames,
                     'total_frames': n_frames * n_cams,
-                    'split': pd.NA,
+                    'split': 'train',
                     'include': True}
         
             rows.append(metadata_dict)
