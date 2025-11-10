@@ -15,7 +15,8 @@ from posetail_preprocessing.utils import io, assemble_extrinsics
 class AniposeFlyDataset(BaseDataset): 
 
     def __init__(self, dataset_path, dataset_outpath, 
-                 dataset_name = 'anipose_fly', debug_ix = None):
+                 dataset_name = 'anipose_fly', 
+                 debug_ix = None):
         super().__init__(dataset_path, dataset_outpath)
 
         self.dataset_name = dataset_name
