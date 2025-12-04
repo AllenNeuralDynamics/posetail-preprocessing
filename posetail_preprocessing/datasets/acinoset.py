@@ -306,5 +306,5 @@ class AcinosetDataset(BaseDataset):
             cam_dict['num_cameras'] = len(cam_names)
 
             # save camera metadata
-            io.save_json(data = cam_dict, outpath = trial_path, 
+            io.save_yaml(data = cam_dict, outpath = trial_path, 
                          fname = 'metadata.yaml')

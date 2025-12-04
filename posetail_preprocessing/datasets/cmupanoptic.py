@@ -414,5 +414,5 @@ class CMUPanopticDataset(BaseDataset):
                 'num_cameras': len(intrinsics)}
 
             # save camera metadata
-            io.save_json(data = cam_dict, outpath = combination_outpath, 
+            io.save_yaml(data = cam_dict, outpath = combination_outpath, 
                     fname = 'metadata.yaml')

@@ -244,6 +244,6 @@ class POPDataset(BaseDataset):
                 'num_cameras': len(intrinsics)}
 
             # save camera metadata
-            io.save_json(data = calib_dict, outpath = trial_outpath, 
+            io.save_yaml(data = calib_dict, outpath = trial_outpath, 
                     fname = 'metadata.yaml')
 

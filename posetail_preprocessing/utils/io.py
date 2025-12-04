@@ -58,6 +58,14 @@ def save_json(data, outpath, fname):
         json.dump(data, json_file, indent = 1) 
 
 
+def save_yaml(data, outpath, fname):
+
+    os.makedirs(outpath, exist_ok = True) 
+
+    with open(os.path.join(outpath, fname), 'w') as yaml_file: 
+        yaml.dump(data, yaml_file) 
+
+
 def save_npz(data, outpath, fname): 
 
     os.makedirs(outpath, exist_ok = True) 

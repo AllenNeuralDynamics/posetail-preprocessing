@@ -121,7 +121,7 @@ class Rat7MDataset(BaseDataset):
 
                 if n >= n_train_videos: 
                     break
-
+                    
         # sample videos for training  
         train_ixs = []
 
@@ -133,6 +133,23 @@ class Rat7MDataset(BaseDataset):
             train_ixs.extend(ixs)   
 
         train_ixs = np.array(train_ixs)
+        self.metadata.loc[train_ixs, 'include'] = True
+
+        return self.metadata
+    
+    def select_train_set_single_session(self, session, n_train_videos = 10, seed = 3):
+        # randomly sample n training videos from one subject
+        # other than subject 5, which is the test set
+
+        np.random.seed(seed)
+
+        # filter metadata for training videos
+        self.metadata.loc[:, 'include'] = False
+        self.metadata.loc[self.metadata['subject'] == 's5', 'split'] = 'test'
+
+        # sample videos for training  
+        df_subset = self.metadata[self.metadata['session'] == session]
+        train_ixs = np.random.choice(df_subset.index, n_train_videos, replace = False)
         self.metadata.loc[train_ixs, 'include'] = True
 
         return self.metadata
@@ -164,6 +181,7 @@ class Rat7MDataset(BaseDataset):
 
             # clean up any empty directories
             if len(os.listdir(outpath)) == 0:
+                # print(f'removing: {outpath}')
                 os.rmdir(outpath)
 
     
@@ -233,7 +251,7 @@ class Rat7MDataset(BaseDataset):
 
             # skip if there aren't many frames remaining
             # NOTE: could also use a threshold
-            if start_frame >= pose.shape[1]: 
+            if start_frame >= pose.shape[1]:
                 continue
 
             # load and format the 3d annotations
@@ -271,5 +289,5 @@ class Rat7MDataset(BaseDataset):
                 'num_cameras': len(intrinsics)}
 
             # save camera metadata
-            io.save_json(data = calib_dict, outpath = trial_outpath, 
+            io.save_yaml(data = calib_dict, outpath = trial_outpath, 
                     fname = 'metadata.yaml')
