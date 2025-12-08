@@ -24,7 +24,7 @@ class ZefDataset(BaseDataset):
     def load_calibration(self, calib_path): 
 
         calib_files = sorted(glob.glob(os.path.join(calib_path, '*.json')))
-        cam_names = np.unique([os.path.basename(f).split('_')[0] for f in calib_files])
+        cam_names = np.unique([os.path.basename(f).split('_')[0] for f in calib_files]).tolist()
 
         intrinsics_dict = {}
         extrinsics_dict = {}
