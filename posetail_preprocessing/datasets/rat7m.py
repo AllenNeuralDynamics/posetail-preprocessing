@@ -32,7 +32,7 @@ class Rat7MDataset(BaseDataset):
         cam_order = [0, 1, 4, 2, 3, 5]
 
         for i, cam in enumerate(cam_order):
-            
+
             cam_name = names[i]
             params = mat['cameras'].item()[cam]
 
@@ -227,7 +227,7 @@ class Rat7MDataset(BaseDataset):
         video_paths = sorted(glob.glob(os.path.join(session_path, f'{session}-*.mp4')))
 
         cam_names = np.unique([os.path.splitext(os.path.basename(video_path))[0].split('-')[2]
-                               for video_path in video_paths])
+                               for video_path in video_paths]).tolist()
         
         start_frames = np.unique([int(os.path.splitext(os.path.basename(video_path))[0].split('-')[3])
                     for video_path in video_paths])
