@@ -5,6 +5,8 @@ import json5
 import toml
 import yaml
 
+import imageio.v3 as iio
+import imageio
 import numpy as np
 
 
@@ -106,6 +108,31 @@ def deserialize_video(video_path, outpath, start_frame = 0, debug_ix = None, zfi
 
         if debug_ix is not None and frame_ix - start_frame == debug_ix: 
             break
+
+    cap.release()
+
+    return video_info
+
+
+def save_frame_synced(video_path, outpath, frame_ix, 
+                      frame_ix_synced = None, zfill = 6):
+
+    if frame_ix_synced is None: 
+        frame_ix_synced = frame_ix 
+
+    os.makedirs(outpath, exist_ok = True)
+    cap = cv2.VideoCapture(video_path)
+
+    video_info = {
+        'camera_height': int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)),
+        'camera_width': int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
+        'num_frames': int(cap.get(cv2.CAP_PROP_FRAME_COUNT))}
+
+    cap.set(cv2.CAP_PROP_POS_FRAMES, frame_ix)
+    _, frame = cap.read()
+
+    out_path = os.path.join(outpath, f'{str(frame_ix_synced).zfill(zfill)}.jpg')
+    cv2.imwrite(out_path, frame)
 
     cap.release()
 

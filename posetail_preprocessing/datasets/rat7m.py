@@ -27,6 +27,7 @@ class Rat7MDataset(BaseDataset):
         intrinsics_dict = {}
         extrinsics_dict = {}
         distortions_dict = {}
+        sync_dict = {}
 
         names = [x.lower() for x in mat['cameras'].dtype.names]
         cam_order = [0, 1, 4, 2, 3, 5]
@@ -54,7 +55,11 @@ class Rat7MDataset(BaseDataset):
             extrinsics_dict[cam_name] = extrinsics.tolist()
             distortions_dict[cam_name] = distortions.tolist()
 
-        return intrinsics_dict, extrinsics_dict, distortions_dict
+            # note the frames are mismatched in the raw dataset, so 
+            # we have to index differently from the camera params
+            sync_dict[cam_name] = mat['cameras'].item()[i]['frame'].item()[0] 
+
+        return intrinsics_dict, extrinsics_dict, distortions_dict, sync_dict
 
 
     def load_pose3d(self, data_path):
@@ -218,11 +223,12 @@ class Rat7MDataset(BaseDataset):
 
         return rows
     
-    def _process_session(self, calib_path, session_path, outpath, session): 
+    def _process_session(self, calib_path, session_path, outpath, 
+                         session, chunk_size = 3500): 
 
         # load calibration data
         calib_path = os.path.join(calib_path, f'mocap-{session}.mat')
-        intrinsics, extrinsics, distortions = self.load_calibration(calib_path)
+        intrinsics, extrinsics, distortions, sync_dict = self.load_calibration(calib_path)
 
         video_paths = sorted(glob.glob(os.path.join(session_path, f'{session}-*.mp4')))
 
@@ -253,9 +259,9 @@ class Rat7MDataset(BaseDataset):
             # NOTE: could also use a threshold
             if start_frame >= pose.shape[1]:
                 continue
-
+             
             # load and format the 3d annotations
-            pose_dict_subset = {'pose': pose[:, start_frame: start_frame + 3500, :, :], 
+            pose_dict_subset = {'pose': pose[:, start_frame:start_frame + chunk_size, :, :], 
                                 'keypoints': pose_dict['keypoints']}
             io.save_npz(pose_dict_subset, trial_outpath, fname = 'pose3d')
 
@@ -266,14 +272,23 @@ class Rat7MDataset(BaseDataset):
 
             for cam_name in cam_names: 
 
-                cam_video_path = os.path.join(session_path, f'{session}-{cam_name}-{start_frame}.mp4')
-                cam_outpath = os.path.join(trial_outpath, 'img', cam_name)
+                cam_frames = sync_dict[cam_name][start_frame:start_frame + chunk_size]
 
-                video_info = io.deserialize_video(
-                    cam_video_path, 
-                    cam_outpath, 
-                    start_frame = 0, 
-                    debug_ix = self.debug_ix)
+                for i, frame in enumerate(cam_frames): 
+
+                    if i >= self.debug_ix:
+                        break
+
+                    video_ix = frame // chunk_size
+                    cam_start_frame = start_frames[video_ix]
+                    cam_video_path = os.path.join(session_path, f'{session}-{cam_name}-{cam_start_frame}.mp4')
+                    cam_outpath = os.path.join(trial_outpath, 'img', cam_name)
+
+                    video_info = io.save_frame_synced(
+                        video_path = cam_video_path, 
+                        outpath = cam_outpath, 
+                        frame_ix = frame - cam_start_frame, 
+                        frame_ix_synced = i)
 
                 cam_height_dict[cam_name] = video_info['camera_height']
                 cam_width_dict[cam_name] = video_info['camera_width']
