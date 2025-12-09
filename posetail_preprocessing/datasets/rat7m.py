@@ -276,7 +276,7 @@ class Rat7MDataset(BaseDataset):
 
                 for i, frame in enumerate(cam_frames): 
 
-                    if i >= self.debug_ix:
+                    if i == self.debug_ix:
                         break
 
                     video_ix = frame // chunk_size
