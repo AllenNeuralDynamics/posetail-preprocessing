@@ -5,8 +5,6 @@ import json5
 import toml
 import yaml
 
-import imageio.v3 as iio
-import imageio
 import numpy as np
 
 
