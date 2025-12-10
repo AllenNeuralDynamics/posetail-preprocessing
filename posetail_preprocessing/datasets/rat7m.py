@@ -35,7 +35,7 @@ class Rat7MDataset(BaseDataset):
         for i, cam in enumerate(cam_order):
 
             cam_name = names[i]
-            params = mat['cameras'].item()[cam]
+            params = mat['cameras'].item()[i]
 
             intrinsics = params['IntrinsicMatrix'].item().transpose()
             rotation_matrix = params['rotationMatrix'].item().transpose()
@@ -57,7 +57,7 @@ class Rat7MDataset(BaseDataset):
 
             # note the frames are mismatched in the raw dataset, so 
             # we have to index differently from the camera params
-            sync_dict[cam_name] = mat['cameras'].item()[i]['frame'].item()[0] 
+            sync_dict[cam_name] = params['frame'].item()[0] 
 
         return intrinsics_dict, extrinsics_dict, distortions_dict, sync_dict
 
