@@ -81,14 +81,12 @@ class Rat7MDataset(BaseDataset):
         coords = np.array(coords)
         pose3d = np.expand_dims(coords.swapaxes(0, 1), axis = 0) # (n_subjects, time, bodyparts, 3)
 
-        # TODO: improve filtering
-        pose3d = pose3d[:, :, :8, :]
-        bodyparts = bodyparts[:8]
-        # pose3d = self._filter_coords(
-        #     coords = pose3d, 
-        #     kernel_size = self.kernel_size, 
-        #     thresh = self.thresh, 
-        #     percentile = self.percentile)
+        # filter out inaccurate keypoints 
+        pose3d = self._filter_coords(
+            coords = pose3d, 
+            kernel_size = self.kernel_size, 
+            thresh = self.thresh, 
+            percentile = self.percentile)
         
         pose3d_dict = {'pose': pose3d, 'keypoints': bodyparts}
 
@@ -205,7 +203,7 @@ class Rat7MDataset(BaseDataset):
                 os.rmdir(outpath)
         
 
-    def _filter_coords(coords, kernel_size = 11, thresh = None, percentile = 90): 
+    def _filter_coords(self, coords, kernel_size = 11, thresh = None, percentile = 90): 
         ''' 
         filters rat7m coordinates by using a median filter to 
         detect outliar keypoints and masking them with nans 
