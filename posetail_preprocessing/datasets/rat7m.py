@@ -13,12 +13,19 @@ from posetail_preprocessing.utils import io, assemble_extrinsics
 class Rat7MDataset(BaseDataset): 
 
     def __init__(self, dataset_path, dataset_outpath, 
-                 dataset_name = 'rat7m', debug_ix = None):
+                 dataset_name = 'rat7m', debug_ix = None, 
+                 filter_kernel_size = 11, filter_thresh = None, 
+                 filter_percentile = 90):
         super().__init__(dataset_path, dataset_outpath)
 
         self.dataset_name = dataset_name
         self.metadata = None
         self.debug_ix = debug_ix
+
+        # parameters for filtering ground truth keypoints
+        self.kernel_size = filter_kernel_size
+        self.thresh = filter_thresh
+        self.percentile = filter_percentile
     
     def load_calibration(self, calib_path):
 
@@ -29,12 +36,11 @@ class Rat7MDataset(BaseDataset):
         distortions_dict = {}
         sync_dict = {}
 
-        names = [x.lower() for x in mat['cameras'].dtype.names]
-        cam_order = [0, 1, 4, 2, 3, 5]
+        cam_names = [x.lower() for x in mat['cameras'].dtype.names]
+        # cam_order = [0, 1, 4, 2, 3, 5]
 
-        for i, cam in enumerate(cam_order):
+        for i, cam_name in enumerate(cam_names):
 
-            cam_name = names[i]
             params = mat['cameras'].item()[i]
 
             intrinsics = params['IntrinsicMatrix'].item().transpose()
@@ -42,7 +48,7 @@ class Rat7MDataset(BaseDataset):
             tvec = params['translationVector'].item()
 
             extrinsics = assemble_extrinsics(rotation_matrix, tvec)
-            rvec = cv2.Rodrigues(rotation_matrix)[0].T[0]
+            # rvec = cv2.Rodrigues(rotation_matrix)[0].T[0]
 
             distortions = np.array([
                 params['RadialDistortion'].item()[0,0],
@@ -75,6 +81,15 @@ class Rat7MDataset(BaseDataset):
         coords = np.array(coords)
         pose3d = np.expand_dims(coords.swapaxes(0, 1), axis = 0) # (n_subjects, time, bodyparts, 3)
 
+        # TODO: improve filtering
+        pose3d = pose3d[:, :, :8, :]
+        bodyparts = bodyparts[:8]
+        # pose3d = self._filter_coords(
+        #     coords = pose3d, 
+        #     kernel_size = self.kernel_size, 
+        #     thresh = self.thresh, 
+        #     percentile = self.percentile)
+        
         pose3d_dict = {'pose': pose3d, 'keypoints': bodyparts}
 
         return pose3d_dict
@@ -188,8 +203,44 @@ class Rat7MDataset(BaseDataset):
             if len(os.listdir(outpath)) == 0:
                 # print(f'removing: {outpath}')
                 os.rmdir(outpath)
+        
 
+    def _filter_coords(coords, kernel_size = 11, thresh = None, percentile = 90): 
+        ''' 
+        filters rat7m coordinates by using a median filter to 
+        detect outliar keypoints and masking them with nans 
+
+        if thresh is none, will threshold according to a percentile
+        for a given subject, keypoint, and coordinate (i.e. x, y, z)
+        '''
+        n_subjects, _, n_kpts, dim = coords.shape
+        coords_filtered = np.zeros(coords.shape) 
+
+        for i in range(n_subjects): 
+
+            for j in range(n_kpts):
+
+                for k in range(dim):
+
+                    x = coords[i, :, j, k] # only one subject in this dataset
+                    medfilt = scipy.signal.medfilt(x, kernel_size = kernel_size)
+                    diff = np.abs(x - medfilt)
+                    coords_filt = x.copy()
+
+                    # use a percentile-based threshold if not provided an
+                    # arbitrary threshold
+                    if thresh is None: 
+                        thresh = np.nanpercentile(diff, percentile)
+
+                    coords_filt[diff >= thresh] = np.nan
+                    coords_filtered[i, :, j, k] = coords_filt
+
+        mask = np.isnan(coords_filtered).any(axis = -1)
+        coords_filtered[mask] = np.nan
+
+        return coords_filtered
     
+
     def _get_videos(self, data_path, session_path, session): 
 
         rows = []

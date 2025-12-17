@@ -119,7 +119,6 @@ class POPDataset(BaseDataset):
 
         os.makedirs(self.dataset_outpath, exist_ok = True)
         subject_counts = io.get_dirs(self.dataset_path)
-        rows = []
 
         for subject_count in subject_counts:
 

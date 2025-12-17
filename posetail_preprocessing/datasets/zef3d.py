@@ -160,8 +160,6 @@ class ZefDataset(BaseDataset):
     
     def _get_session(self, session_path, session, split): 
 
-        rows = []
-
         intrinsics_dict, *_ = self.load_calibration(session_path)
         n_cams = len(intrinsics_dict)
 
@@ -174,7 +172,7 @@ class ZefDataset(BaseDataset):
         img_path = os.path.join(session_path, 'imgF', '*.jpg')
         n_frames = int(len(glob.glob(img_path)))
 
-        metadata_dict = {
+        rows = [{
                 'id': f'{session}',
                 'session': session, 
                 'subject': session, 
@@ -183,10 +181,8 @@ class ZefDataset(BaseDataset):
                 'n_frames': n_frames,
                 'total_frames': n_frames * n_cams,
                 'split': split, 
-                'include': True}
+                'include': True}]
         
-        rows.append(metadata_dict)
-
         return rows
     
 
