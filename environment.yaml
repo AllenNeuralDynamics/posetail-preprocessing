@@ -14,7 +14,7 @@ dependencies:
     - aniposelib>=0.7.0
     - easydict==1.13
     - einops==0.8.1
-    - joblib-1.5.2
+    - joblib==1.5.2
     - json5==0.12.1
     - opencv-python-headless==4.9.0.80
     - toml==0.10.2
