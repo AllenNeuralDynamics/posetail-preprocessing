@@ -310,8 +310,14 @@ class Rat7MDataset(BaseDataset):
                 continue
              
             # load and format the 3d annotations
-            pose_dict_subset = {'pose': pose[:, start_frame:start_frame + chunk_size, :, :], 
+            if self.debug_ix != -1:
+                pose_subset = pose[:, start_frame:start_frame + self.debug_ix, :, :]
+            else:
+                pose_subset = pose[:, start_frame:start_frame + chunk_size, :, :]
+
+            pose_dict_subset = {'pose': pose_subset, 
                                 'keypoints': pose_dict['keypoints']}
+            
             io.save_npz(pose_dict_subset, trial_outpath, fname = 'pose3d')
 
             # deserialize the camera videos and save as images 
@@ -323,21 +329,21 @@ class Rat7MDataset(BaseDataset):
 
                 cam_frames = sync_dict[cam_name][start_frame:start_frame + chunk_size]
 
-                for i, frame in enumerate(cam_frames): 
+                # for i, frame in enumerate(cam_frames): 
 
-                    if i == self.debug_ix:
-                        break
+                #     if i == self.debug_ix:
+                #         break
 
-                    video_ix = frame // chunk_size
-                    cam_start_frame = start_frames[video_ix]
-                    cam_video_path = os.path.join(session_path, f'{session}-{cam_name}-{cam_start_frame}.mp4')
-                    cam_outpath = os.path.join(trial_outpath, 'img', cam_name)
+                #     video_ix = frame // chunk_size
+                #     cam_start_frame = start_frames[video_ix]
+                #     cam_video_path = os.path.join(session_path, f'{session}-{cam_name}-{cam_start_frame}.mp4')
+                #     cam_outpath = os.path.join(trial_outpath, 'img', cam_name)
 
-                    video_info = io.save_frame_synced(
-                        video_path = cam_video_path, 
-                        outpath = cam_outpath, 
-                        frame_ix = frame - cam_start_frame, 
-                        frame_ix_synced = i)
+                #     video_info = io.save_frame_synced(
+                #         video_path = cam_video_path, 
+                #         outpath = cam_outpath, 
+                #         frame_ix = frame - cam_start_frame, 
+                #         frame_ix_synced = i)
 
                 cam_height_dict[cam_name] = video_info['camera_height']
                 cam_width_dict[cam_name] = video_info['camera_width']
@@ -355,3 +361,76 @@ class Rat7MDataset(BaseDataset):
             # save camera metadata
             io.save_yaml(data = calib_dict, outpath = trial_outpath, 
                     fname = 'metadata.yaml')
+            
+
+    def _process_session_train(self, session_path, trial_outpath, 
+                              session, cam_name, start_frames, 
+                              cam_frames, chunk_size = 3500): 
+            
+        # save deserialized frames 
+        for i, frame in enumerate(cam_frames): 
+
+            if i == self.debug_ix:
+                break
+
+            video_ix = frame // chunk_size
+            cam_start_frame = start_frames[video_ix]
+            cam_video_path = os.path.join(session_path, f'{session}-{cam_name}-{cam_start_frame}.mp4')
+            cam_outpath = os.path.join(trial_outpath, 'img', cam_name)
+
+            video_info = io.save_frame_synced(
+                video_path = cam_video_path, 
+                outpath = cam_outpath, 
+                frame_ix = frame - cam_start_frame, 
+                frame_ix_synced = i)
+
+        return video_info
+    
+
+    def _process_session_test(self, session_path, trial_outpath, 
+                              session, cam_name, start_frames, 
+                              cam_frames, chunk_size = 3500): 
+        
+        # open video to get width and height
+        video_ix = cam_frames[0] // chunk_size
+        cam_start_frame = start_frames[video_ix]
+        cam_video_path = os.path.join(session_path, f'{session}-{cam_name}-{cam_start_frame}.mp4')
+        cap = cv2.VideoCapture(cam_video_path)
+
+        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        num_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        fps = int(cap.get(cv2.CAP_PROP_FPS))
+        
+        video_info = {
+            'camera_height': height,
+            'camera_width': width,
+            'num_frames': num_frames
+        }
+
+        # generate a new synced video 
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        cam_video_outpath = os.path.join(session_path, f'{cam_name}.mp4')
+        writer = cv2.VideoWriter(cam_video_outpath, fourcc, fps, (width, height))
+
+        for i, frame in enumerate(cam_frames): 
+
+            if i == self.debug_ix:
+                break
+
+            video_ix = frame // chunk_size
+            cam_start_frame = start_frames[video_ix]
+            cam_video_path = os.path.join(session_path, f'{session}-{cam_name}-{cam_start_frame}.mp4')
+            cam_outpath = os.path.join(trial_outpath, 'vid')
+
+            frame = io.get_frame_synced(
+                video_path = cam_video_path, 
+                outpath = cam_outpath, 
+                frame_ix = frame - cam_start_frame, 
+                frame_ix_synced = i)
+            
+            writer.write(frame)
+        
+        writer.release()
+
+        return video_info

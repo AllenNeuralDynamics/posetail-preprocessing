@@ -155,7 +155,7 @@ class CMUPanopticDataset(BaseDataset):
             cam_names = sorted([int(os.path.splitext(name)[0].split('_')[-1]) for name in video_names])
 
             # get subsets of cameras to process
-            combinations = self._get_camera_subset(video_path, cam_names, seed = self.seed)
+            combinations = self._get_camera_subset(cam_names, seed = self.seed)
             print(session)
             print(combinations)
 
@@ -288,11 +288,9 @@ class CMUPanopticDataset(BaseDataset):
         return coords_aligned
 
     
-    def _get_camera_subset(self, img_path, cam_names, seed = None): 
+    def _get_camera_subset(self, cam_names, seed = None): 
 
         # set seed for reproducibility across sessions and runs
-        # NOTE: if you want different views sampled for each
-        # run, could pass in different seeds
         np.random.seed(seed)
 
         # get all possible combinations of camera views

@@ -15,7 +15,7 @@ class CMUPanopticGSDataset(BaseDataset):
 
     def __init__(self, dataset_path, dataset_outpath, 
                  dataset_name = 'cmupanoptic_3dgs', 
-                 n_cameras = 6, n_combinations = 6, n_tries = 100, 
+                 n_cameras = 6, n_combinations = 1, n_tries = 1, 
                  seed = 11, debug_ix = None):
         super().__init__(dataset_path, dataset_outpath)
 
@@ -94,14 +94,24 @@ class CMUPanopticGSDataset(BaseDataset):
         test_sports = ['basketball', 'boxes']
 
         for sport in test_sports: 
-            df.loc[df['session'] == sport, 'split'] = 'test'
-            df.loc[df['session'] == sport, 'include'] = False 
+            self.metadata.loc[self.metadata['session'] == sport, 'split'] = 'test'
+            self.metadata.loc[self.metadata['session'] == sport, 'include'] = False 
+
+        df = self.metadata[self.metadata['include']]
 
         return df
 
-    def select_test_set(self):  
-        # TODO
-        pass 
+    def select_test_set(self): 
+
+        test_sports = ['basketball', 'boxes']
+
+        for sport in test_sports: 
+            self.metadata.loc[self.metadata['session'] == sport, 'split'] = 'test'
+            self.metadata.loc[self.metadata['session'] == sport, 'include'] = False 
+
+        df = self.metadata[~self.metadata['include']]
+
+        return df
 
     def generate_dataset(self): 
 
@@ -116,7 +126,7 @@ class CMUPanopticGSDataset(BaseDataset):
             cam_names = sorted([int(i) for i in cam_names])
             
             # get subsets of cameras to process
-            combinations = self._get_camera_subset(img_path, cam_names, seed = self.seed)
+            combinations = self._get_camera_subset(cam_names, seed = self.seed)
 
             outpath = os.path.join(self.dataset_outpath, session)
             os.makedirs(outpath, exist_ok = True)
@@ -158,11 +168,9 @@ class CMUPanopticGSDataset(BaseDataset):
 
         return rows
     
-    def _get_camera_subset(self, img_path, cam_names, seed = None): 
+    def _get_camera_subset(self, cam_names, seed = None): 
 
         # for reproducibility across sports and runs
-        # NOTE: if you want different views sampled for each
-        # run, could pass in a different seed
         np.random.seed(seed)
 
         # get all possible combinations of camera views

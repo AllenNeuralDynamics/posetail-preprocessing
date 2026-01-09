@@ -62,7 +62,7 @@ class KubricMultiviewDataset(BaseDataset):
         coords = np.array(np.load(data_path)['tracks_3d'])
         total_movement = reduce(np.abs(np.diff(coords, axis = 0)), 'n k r -> k', 'sum')
         movement_check = total_movement > eps
-        coords = coords[None, :, movement_check]
+        coords = coords[:, movement_check]
         pose3d = np.expand_dims(coords, axis = 0) # (n_subjects, time, keypoints, 3)
 
         keypoints = [f'kpt{i}' for i in range(pose3d.shape[2])]
@@ -94,9 +94,26 @@ class KubricMultiviewDataset(BaseDataset):
         return df
 
 
-    def select_train_set(self):
-        # TODO
-        pass 
+    def select_train_set(self, n_train_videos = 25, seed = 3):
+        '''
+        randomly samples n videos to be curated as the training
+        set. the remaining samples become validation.
+        '''
+
+        np.random.seed(seed)
+
+        # determine train set
+        train_ixs = np.random.choice(self.metadata.index, n_train_videos, replace = False)
+        train_split = self.metadata.index.isin(train_ixs)
+
+        self.metadata.loc[train_split, 'split'] = 'train'
+        self.metadata.loc[train_split, 'include'] = True
+
+        # determine val set
+        self.metadata.loc[~train_split, 'split'] = 'val'
+        self.metadata.loc[~train_split, 'include'] = True
+
+        return self.metadata
 
 
     def select_test_set(self):  
@@ -104,7 +121,12 @@ class KubricMultiviewDataset(BaseDataset):
         pass 
 
 
-    def generate_dataset(self): 
+    def generate_dataset(self, split = None): 
+
+        metadata_subset = None 
+        if split is not None:
+            assert split in {'train', 'val', 'test'} 
+            metadata_subset = self.metadata[self.metadata['split'] == split]
 
         os.makedirs(self.dataset_outpath, exist_ok = True)
         trials = io.get_dirs(self.dataset_path)
@@ -118,7 +140,7 @@ class KubricMultiviewDataset(BaseDataset):
                 session_path = os.path.join(self.dataset_path, trial, session)
                 outpath = os.path.join(self.dataset_outpath, trial, session)
                 os.makedirs(outpath, exist_ok = True)
-                self._process_session(session_path, outpath, session)
+                self._process_session(session_path, outpath, session, metadata = metadata_subset)
 
                 # clean up any empty directories
                 if len(os.listdir(outpath)) == 0:
@@ -153,7 +175,7 @@ class KubricMultiviewDataset(BaseDataset):
         return rows
 
 
-    def _process_session(self, session_path, outpath, session): 
+    def _process_session(self, session_path, outpath, session, metadata = None): 
 
         # specify conditions to process the session
         process = True
@@ -163,9 +185,10 @@ class KubricMultiviewDataset(BaseDataset):
         cam_names = list(intrinsics.keys())
 
         # skip if metadata excludes it 
-        if self.metadata is not None: 
-            df = self.metadata[self.metadata['id'] == session]
-            if not df['include'].values[0]: 
+        if metadata is not None: 
+            df = metadata[metadata['id'] == session]
+            if df.empty or not df['include'].values[0]:
+                print('skipping', session) 
                 process = False
 
         if process:
@@ -182,7 +205,7 @@ class KubricMultiviewDataset(BaseDataset):
 
                 img_path = os.path.join(session_path, cam_name)
                 img_paths = sorted(glob.glob(os.path.join(img_path, 'rgba*.png')))
-                img_outpath = os.path.join(outpath, cam_name)
+                img_outpath = os.path.join(outpath, 'img', cam_name)
                 os.makedirs(img_outpath, exist_ok = True)
                 n_frames.append(len(img_paths))
 

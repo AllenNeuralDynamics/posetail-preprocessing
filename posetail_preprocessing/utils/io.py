@@ -135,3 +135,20 @@ def save_frame_synced(video_path, outpath, frame_ix,
     cap.release()
 
     return video_info
+
+
+def get_frame_synced(video_path, outpath, frame_ix, 
+                      frame_ix_synced = None):
+
+    if frame_ix_synced is None: 
+        frame_ix_synced = frame_ix 
+
+    os.makedirs(outpath, exist_ok = True)
+    cap = cv2.VideoCapture(video_path)
+
+    cap.set(cv2.CAP_PROP_POS_FRAMES, frame_ix)
+    _, frame = cap.read()
+
+    cap.release()
+
+    return frame
