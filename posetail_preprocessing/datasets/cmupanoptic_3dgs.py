@@ -1,7 +1,6 @@
-import cv2
 import glob
-import itertools
 import os 
+import cv2
 import shutil 
 
 import numpy as np
@@ -14,20 +13,11 @@ from posetail_preprocessing.utils import io
 class CMUPanopticGSDataset(BaseDataset): 
 
     def __init__(self, dataset_path, dataset_outpath, 
-                 dataset_name = 'cmupanoptic_3dgs', 
-                 n_cameras = 6, n_combinations = 1, n_tries = 1, 
-                 seed = 11, debug_ix = None):
+                 dataset_name = 'cmupanoptic_3dgs'):
         super().__init__(dataset_path, dataset_outpath)
 
         self.dataset_name = dataset_name
-
-        self.n_cameras = n_cameras
-        self.n_combinations = n_combinations
-        self.n_tries = n_tries
-        self.seed = seed
-
         self.metadata = None
-        self.debug_ix = debug_ix
     
     def load_calibration(self, calib_path, n_dist_coeffs = 5):
 
@@ -62,22 +52,21 @@ class CMUPanopticGSDataset(BaseDataset):
     def load_pose3d(self, data_path):
 
         data = np.load(data_path)
-        pose3d = np.expand_dims(data['means3D'], axis = 0) # (n_subjects, frames, kpts, 3)
+        pose3d = np.expand_dims(data['trajectories'], axis = 0) # (n_subjects, time, kpts, 3)
 
-        keypoints = [f'kpt{i}' for i in range(pose3d.shape[1])]
+        keypoints = [f'kpt{i}' for i in range(pose3d.shape[2])]
         pose3d_dict = {'pose': pose3d, 'keypoints': keypoints}
 
         return pose3d_dict
 
     def generate_metadata(self):
 
-        data_path = os.path.join(self.dataset_path, 'images')
-        sessions = io.get_dirs(data_path)
+        sessions = io.get_dirs(self.dataset_path)
         rows = []
 
         for session in sessions: 
 
-            session_path = os.path.join(data_path, session)
+            session_path = os.path.join(self.dataset_path, session)
             metadata_rows = self._get_session(session_path, session)
             rows.extend(metadata_rows)
 
@@ -89,48 +78,41 @@ class CMUPanopticGSDataset(BaseDataset):
 
         return df
 
-    def select_train_set(self):
+    def select_splits(self):
+        
+        # NOTE: train/test splits have already been curated in 
+        # self._get_session. a validation set can be selected 
+        # here if desired
 
-        test_sports = ['basketball', 'boxes']
+        return self.metadata 
 
-        for sport in test_sports: 
-            self.metadata.loc[self.metadata['session'] == sport, 'split'] = 'test'
-            self.metadata.loc[self.metadata['session'] == sport, 'include'] = False 
+    def generate_dataset(self, splits = None): 
 
-        df = self.metadata[self.metadata['include']]
+        # determine which dataset splits to generate
+        valid_splits = {'train', 'val', 'test'}
 
-        return df
+        if splits is not None: 
+            splits = set(splits)
+            assert splits.issubset(valid_splits) 
+        else: 
+            splits = valid_splits
 
-    def select_test_set(self): 
+        # generate the dataset
+        sessions = io.get_dirs(self.dataset_path)
 
-        test_sports = ['basketball', 'boxes']
+        for split in splits: 
 
-        for sport in test_sports: 
-            self.metadata.loc[self.metadata['session'] == sport, 'split'] = 'test'
-            self.metadata.loc[self.metadata['session'] == sport, 'include'] = False 
+            for session in sessions: 
 
-        df = self.metadata[~self.metadata['include']]
+                outpath = os.path.join(self.dataset_outpath, split, session, 'trial')
+                os.makedirs(outpath, exist_ok = True)
+                self._process_session(outpath, session, split)
 
-        return df
+                # clean up any empty directories
+                if len(os.listdir(outpath)) == 0:
+                    # print(f'removing: {outpath}')
+                    os.rmdir(outpath)
 
-    def generate_dataset(self): 
-
-        os.makedirs(self.dataset_outpath, exist_ok = True)
-        sessions = io.get_dirs(os.path.join(self.dataset_path, 'images'))
-
-        for session in sessions: 
-
-            # get all camera names
-            img_path = os.path.join(self.dataset_path, 'images', session, 'ims')
-            cam_names = io.get_dirs(img_path)
-            cam_names = sorted([int(i) for i in cam_names])
-            
-            # get subsets of cameras to process
-            combinations = self._get_camera_subset(cam_names, seed = self.seed)
-
-            outpath = os.path.join(self.dataset_outpath, session)
-            os.makedirs(outpath, exist_ok = True)
-            self._process_session(outpath, session, combinations)
 
     def get_metadata(self):
         return self.metadata
@@ -140,120 +122,95 @@ class CMUPanopticGSDataset(BaseDataset):
 
     def _get_session(self, session_path, session): 
 
-        calib_paths = glob.glob(os.path.join(session_path, '*.json'))
-        n_cams = 0
         rows = []
+        calib_paths = glob.glob(os.path.join(session_path, '*.json'))
 
         for calib_path in calib_paths: 
 
+            split = os.path.splitext(os.path.basename(calib_path))[0].split('_')[0]
             intrinsics_dict, *_ = self.load_calibration(calib_path)
             cam_names = list(intrinsics_dict.keys())
-            n_cams += len(cam_names)
+            n_cams = len(cam_names)
 
             img_path = os.path.join(session_path, 'ims', str(cam_names[0]), '*.jpg')
             n_frames = int(len(glob.glob(img_path)))
 
-        metadata_dict = {
-                'id': f'{session}',
-                'session': session, 
-                'subject': session, 
-                'trial': 1,
-                'n_cameras': n_cams, 
-                'n_frames': n_frames,
-                'total_frames': n_frames * n_cams,
-                'split': 'train',
-                'include': True}
-        
-        rows.append(metadata_dict)
+            metadata_dict = {
+                    'id': f'{session}_{split}',
+                    'session': session, 
+                    'subject': session, 
+                    'trial': 1,
+                    'n_cameras': n_cams, 
+                    'n_frames': n_frames,
+                    'total_frames': n_frames * n_cams,
+                    'split': split, 
+                    'include': True}
+            
+            rows.append(metadata_dict)
 
         return rows
     
-    def _get_camera_subset(self, cam_names, seed = None): 
+    def _process_session(self, outpath, session, split): 
 
-        # for reproducibility across sports and runs
-        np.random.seed(seed)
-
-        # get all possible combinations of camera views
-        combinations = list(itertools.combinations(cam_names, self.n_cameras))
-        print(f'sampling {self.n_combinations} combinations of {self.n_cameras} cameras...')
-
-        # find a score to maximize camera view diversity
-        best_score = 0
-        cam_subsets = None
-
-        for i in range(self.n_tries):
-
-            ixs = np.random.choice(len(combinations), size = self.n_combinations, replace = False)
-            subsets = [np.array(combinations[ix]) for ix in ixs]
-            score = len(np.unique(np.stack(subsets)))
-            
-            # track best subset 
-            if score >= best_score:
-                best_score = score 
-                cam_subsets = subsets
-
-        return cam_subsets
-
-    def _process_session(self, outpath, session, combinations): 
+        # select the metadata for the given split
+        metadata = self.metadata[self.metadata['split'] == split]
 
         # specify conditions to process the session
         process = True
-        session_path = os.path.join(self.dataset_path, 'images', session)
-        data_path = os.path.join(self.dataset_path, 'output', 'pretrained', session, 'params.npz')
+        session_path = os.path.join(self.dataset_path, session)
+        data_path = os.path.join(self.dataset_path, session, 'tapvid3d_annotations.npz')
         calib_paths = glob.glob(os.path.join(session_path, '*.json'))
 
-        for i, combination in enumerate(combinations): 
+        for calib_path in calib_paths: 
 
-            for calib_path in calib_paths: 
+            # load calibration data
+            calib_split = os.path.splitext(os.path.basename(calib_path))[0].split('_')[0]
+            if split != calib_split: 
+                continue
 
-                # load calibration data
-                combination_outpath = os.path.join(outpath, f'cam_combination_{i}')
-                intrinsics, extrinsics, distortions, _ = self.load_calibration(calib_path)
-                cam_names = list(intrinsics.keys())
+            print(calib_path)
+            intrinsics, extrinsics, distortions, _ = self.load_calibration(calib_path)
+            cam_names = list(intrinsics.keys())
 
-                # skip if metadata excludes it 
-                if self.metadata is not None: 
-                    df = self.metadata[self.metadata['id'] == f'{session}']
-                    if not df['include'].values[0]: 
-                        process = False
+            # skip if metadata excludes it 
+            if metadata is not None: 
+                df = metadata[metadata['id'] == f'{session}_{split}']
+                if df.empty or not df['include'].values[0]: 
+                    process = False
 
-                if process:
+            if process:
                 
-                    # load and format the 3d annotations
-                    pose_dict = self.load_pose3d(data_path)
-                    io.save_npz(pose_dict, combination_outpath, fname = 'pose3d')
+                # load and format the 3d annotations
+                pose_dict = self.load_pose3d(data_path)
+                io.save_npz(pose_dict, outpath, fname = 'pose3d')
 
-                    # copy image folders to new outpath
-                    cam_height_dict = {}
-                    cam_width_dict = {}
-                    n_frames = []
+                # copy image folders to new outpath
+                cam_height_dict = {}
+                cam_width_dict = {}
+                n_frames = []
 
-                    for cam_name in cam_names:
+                for cam_name in cam_names:
 
-                        # only select cameras for the current combination
-                        if cam_name not in combination: 
-                            continue
+                    img_path = os.path.join(session_path, 'ims', str(cam_name))
+                    imgs = sorted(glob.glob(os.path.join(img_path, '*.jpg')))
+                    img = cv2.imread(imgs[0])
 
-                        img_path = os.path.join(session_path, 'ims', str(cam_name))
-                        imgs = sorted(glob.glob(os.path.join(img_path, '*.jpg')))
-                        img = cv2.imread(imgs[0])
+                    cam_height_dict[cam_name] = img.shape[0]
+                    cam_width_dict[cam_name] = img.shape[1]
+                    n_frames.append(len(imgs))
 
-                        cam_height_dict[cam_name] = img.shape[0]
-                        cam_width_dict[cam_name] = img.shape[1]
-                        n_frames.append(len(imgs))
+                    img_outpath = os.path.join(outpath, 'img', str(cam_name))
+                    shutil.copytree(img_path, img_outpath, dirs_exist_ok = True)
 
-                        img_outpath = os.path.join(combination_outpath, 'img', str(cam_name))
-                        shutil.copytree(img_path, img_outpath, dirs_exist_ok = True)
+                cam_dict = {
+                    'intrinsic_matrices': intrinsics, 
+                    'extrinsic_matrices': extrinsics, 
+                    'distortion_matrices': distortions,
+                    'camera_heights': cam_height_dict,
+                    'camera_widths': cam_width_dict,
+                    'n_frames': min(n_frames), 
+                    'num_cameras': len(intrinsics)}
 
-            cam_dict = {
-                'intrinsic_matrices': intrinsics, 
-                'extrinsic_matrices': extrinsics, 
-                'distortion_matrices': distortions,
-                'camera_heights': cam_height_dict,
-                'camera_widths': cam_width_dict,
-                'n_frames': min(n_frames), 
-                'num_cameras': len(intrinsics)}
-
-            # save camera metadata
-            io.save_yaml(data = cam_dict, outpath = combination_outpath, 
-                    fname = 'metadata.yaml')
+                # save camera metadata
+                io.save_json(data = cam_dict, outpath = outpath, 
+                        fname = 'metadata.yaml')
