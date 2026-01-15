@@ -6,6 +6,8 @@ import scipy
 import numpy as np
 import pandas as pd 
 
+from collections import defaultdict
+
 from posetail_preprocessing.datasets import BaseDataset
 from posetail_preprocessing.utils import io, assemble_extrinsics
 
@@ -113,8 +115,24 @@ class Rat7MDataset(BaseDataset):
         self.metadata = df
 
         return df
+    
+    def select_splits(self):
+        
+        subject_splits = [{'s1', 's2', 's3'},  {'s4'},  {'s5'}]
+        splits = ['train', 'val', 'test']
+
+        for i, subjects in enumerate(subject_splits):
+            self.metadata.loc[self.metadata['subject'].isin(subjects), 'split'] = splits[i]
+
+        return self.metadata
 
     def select_train_set(self, n_train_videos = 10, seed = 3):
+        ''' 
+        NOTE: this is for testing the network on a small, specific 
+        subset of the data and will likely be deprecated
+        at some point
+        '''
+
         # randomly sample n training videos, distributed 
         # across training subjects
 
@@ -155,10 +173,15 @@ class Rat7MDataset(BaseDataset):
 
         return self.metadata
     
-    def select_train_set_single_session(self, session, n_train_videos = 10, seed = 3):
+    def select_train_set_single_session(self, session, n_train_videos = 10, seed = 3):        
+        ''' 
+        NOTE: this is for testing the network on a small, specific 
+        subset of the data and will likely be deprecated
+        at some point
+        '''
+
         # randomly sample n training videos from one subject
         # other than subject 5, which is the test set
-
         np.random.seed(seed)
 
         # filter metadata for training videos
@@ -172,35 +195,44 @@ class Rat7MDataset(BaseDataset):
 
         return self.metadata
 
-    def select_test_set(self):  
-        # TODO
-        pass 
-
     def get_metadata(self):
         return self.metadata
     
     def set_metadata(self, df): 
         self.metadata = df 
 
-    def generate_dataset(self): 
+    def generate_dataset(self, splits = None):
 
-        os.makedirs(self.dataset_outpath, exist_ok = True)
+        # determine which dataset splits to generate
+        valid_splits = {'train', 'val', 'test'}
+
+        if splits is not None: 
+            splits = set(splits)
+            assert splits.issubset(valid_splits) 
+        else: 
+            splits = valid_splits
+
+        # generate the dataset for each split 
         video_path = os.path.join(self.dataset_path, 'videos')
         data_path = os.path.join(self.dataset_path, 'data')
 
-        sessions = io.get_dirs(video_path)
+        for split in splits: 
 
-        for session in sessions: 
+            prefix = os.path.join(self.dataset_outpath, split, self.dataset_name)
+            os.makedirs(prefix, exist_ok = True)
+            sessions = io.get_dirs(video_path)
 
-            session_path = os.path.join(video_path, session)
-            outpath = os.path.join(self.dataset_outpath, session)
-            os.makedirs(outpath, exist_ok = True)
-            self._process_session(data_path, session_path, outpath, session)
+            for session in sessions: 
 
-            # clean up any empty directories
-            if len(os.listdir(outpath)) == 0:
-                # print(f'removing: {outpath}')
-                os.rmdir(outpath)
+                session_path = os.path.join(video_path, session)
+                outpath = os.path.join(prefix, session)
+                os.makedirs(outpath, exist_ok = True)
+                self._process_session(data_path, session_path, outpath, session, split)
+
+                # clean up any empty directories
+                if len(os.listdir(outpath)) == 0:
+                    # print(f'removing: {outpath}')
+                    os.rmdir(outpath)
         
 
     def _filter_coords(self, coords, kernel_size = 11, thresh = None, percentile = 90): 
@@ -265,7 +297,7 @@ class Rat7MDataset(BaseDataset):
                     'n_cameras': n_cams, 
                     'n_frames': n_frames,
                     'total_frames': n_frames * n_cams,
-                    'split': 'train',
+                    'split': 'train', # train by default
                     'include': True}
         
             rows.append(metadata_dict)
@@ -273,7 +305,11 @@ class Rat7MDataset(BaseDataset):
         return rows
     
     def _process_session(self, calib_path, session_path, outpath, 
-                         session, chunk_size = 3500): 
+                         session, split, chunk_size = 3500): 
+
+        # select subset of metadata associated with the split 
+        metadata = self.metadata[self.metadata['split'] == split]
+        print(metadata)
 
         # load calibration data
         calib_path = os.path.join(calib_path, f'mocap-{session}.mat')
@@ -281,8 +317,8 @@ class Rat7MDataset(BaseDataset):
 
         video_paths = sorted(glob.glob(os.path.join(session_path, f'{session}-*.mp4')))
 
-        cam_names = np.unique([os.path.splitext(os.path.basename(video_path))[0].split('-')[2]
-                               for video_path in video_paths]).tolist()
+        # cam_names = np.unique([os.path.splitext(os.path.basename(video_path))[0].split('-')[2]
+        #                        for video_path in video_paths]).tolist()
         
         start_frames = np.unique([int(os.path.splitext(os.path.basename(video_path))[0].split('-')[3])
                     for video_path in video_paths])
@@ -298,11 +334,10 @@ class Rat7MDataset(BaseDataset):
             trial_outpath = os.path.join(outpath, str(start_frame).zfill(6))
 
             # skip video if metadata excludes it 
-            if self.metadata is not None: 
-                df = self.metadata[self.metadata['id'] == f'{session}_{start_frame}']
-                if not df['include'].values[0]: 
-                    # print('skipping...')
-                    continue
+            df = metadata[metadata['id'] == f'{session}_{start_frame}']
+            if df.empty or not df['include'].values[0]: 
+                # print('skipping...')
+                continue
 
             # skip if there aren't many frames remaining
             # NOTE: could also use a threshold
@@ -320,42 +355,28 @@ class Rat7MDataset(BaseDataset):
             
             io.save_npz(pose_dict_subset, trial_outpath, fname = 'pose3d')
 
-            # deserialize the camera videos and save as images 
-            cam_height_dict = {}
-            cam_width_dict = {}
-            n_frames = []
-
-            for cam_name in cam_names: 
-
-                cam_frames = sync_dict[cam_name][start_frame:start_frame + chunk_size]
-
-                # for i, frame in enumerate(cam_frames): 
-
-                #     if i == self.debug_ix:
-                #         break
-
-                #     video_ix = frame // chunk_size
-                #     cam_start_frame = start_frames[video_ix]
-                #     cam_video_path = os.path.join(session_path, f'{session}-{cam_name}-{cam_start_frame}.mp4')
-                #     cam_outpath = os.path.join(trial_outpath, 'img', cam_name)
-
-                #     video_info = io.save_frame_synced(
-                #         video_path = cam_video_path, 
-                #         outpath = cam_outpath, 
-                #         frame_ix = frame - cam_start_frame, 
-                #         frame_ix_synced = i)
-
-                cam_height_dict[cam_name] = video_info['camera_height']
-                cam_width_dict[cam_name] = video_info['camera_width']
-                n_frames.append(video_info['num_frames'])
+            # put videos/frames in the desired format
+            if split == 'test':  
+                # for test set, save as videos
+                video_info = self._process_session_test(
+                    session_path, trial_outpath, 
+                    session, start_frame, start_frames, 
+                    sync_dict, chunk_size = chunk_size)
+            else:
+                # for train and validation sets, deserialize the camera videos 
+                # and save as images  
+                video_info = self._process_session_train(
+                    session_path, trial_outpath, 
+                    session, start_frame, start_frames, 
+                    sync_dict, chunk_size = chunk_size)
 
             calib_dict = {
                 'intrinsic_matrices': intrinsics, 
                 'extrinsic_matrices': extrinsics, 
                 'distortion_matrices': distortions,
-                'camera_heights': cam_height_dict,
-                'camera_widths': cam_width_dict,
-                'num_frames': min(n_frames), 
+                'camera_heights': video_info['cam_height_dict'],
+                'camera_widths': video_info['cam_width_dict'],
+                'num_frames': min(video_info['n_frames']), 
                 'num_cameras': len(intrinsics)}
 
             # save camera metadata
@@ -364,73 +385,115 @@ class Rat7MDataset(BaseDataset):
             
 
     def _process_session_train(self, session_path, trial_outpath, 
-                              session, cam_name, start_frames, 
-                              cam_frames, chunk_size = 3500): 
+                              session, start_frame, start_frames, 
+                              sync_dict, chunk_size = 3500): 
             
-        # save deserialized frames 
-        for i, frame in enumerate(cam_frames): 
+        # save video/image data in the expected format
+        cam_names = list(sync_dict.keys())
+        cam_height_dict = {}
+        cam_width_dict = {}
+        n_frames = []
 
-            if i == self.debug_ix:
-                break
+        for cam_name in cam_names: 
 
-            video_ix = frame // chunk_size
-            cam_start_frame = start_frames[video_ix]
-            cam_video_path = os.path.join(session_path, f'{session}-{cam_name}-{cam_start_frame}.mp4')
-            cam_outpath = os.path.join(trial_outpath, 'img', cam_name)
+            # get frames for synchronization
+            cam_frames = sync_dict[cam_name][start_frame:start_frame + chunk_size]
 
-            video_info = io.save_frame_synced(
-                video_path = cam_video_path, 
-                outpath = cam_outpath, 
-                frame_ix = frame - cam_start_frame, 
-                frame_ix_synced = i)
+            # save deserialized frames 
+            for i, frame in enumerate(cam_frames): 
+
+                if i == self.debug_ix:
+                    break
+
+                video_ix = frame // chunk_size
+                cam_start_frame = start_frames[video_ix]
+                cam_video_path = os.path.join(session_path, f'{session}-{cam_name}-{cam_start_frame}.mp4')
+                cam_outpath = os.path.join(trial_outpath, 'img', cam_name)
+
+                video_info = io.save_frame_synced(
+                    video_path = cam_video_path, 
+                    outpath = cam_outpath, 
+                    frame_ix = frame - cam_start_frame, 
+                    frame_ix_synced = i)
+            
+                cam_height_dict[cam_name] = video_info['camera_height']
+                cam_width_dict[cam_name] = video_info['camera_width']
+                n_frames.append(video_info['num_frames'])
+
+        video_info = {
+            'cam_height_dict': cam_height_dict, 
+            'cam_width_dict': cam_width_dict, 
+            'n_frames': n_frames,
+        }
 
         return video_info
     
 
     def _process_session_test(self, session_path, trial_outpath, 
-                              session, cam_name, start_frames, 
-                              cam_frames, chunk_size = 3500): 
+                              session, start_frame, start_frames, 
+                              sync_dict, chunk_size = 3500): 
         
-        # open video to get width and height
-        video_ix = cam_frames[0] // chunk_size
-        cam_start_frame = start_frames[video_ix]
-        cam_video_path = os.path.join(session_path, f'{session}-{cam_name}-{cam_start_frame}.mp4')
-        cap = cv2.VideoCapture(cam_video_path)
+        # save video/image data in the expected format
+        video_outpath = os.path.join(trial_outpath, 'vid')
+        os.makedirs(video_outpath, exist_ok = True)
 
-        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        num_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        fps = int(cap.get(cv2.CAP_PROP_FPS))
-        
-        video_info = {
-            'camera_height': height,
-            'camera_width': width,
-            'num_frames': num_frames
-        }
+        cam_names = list(sync_dict.keys())
+        cam_height_dict = {}
+        cam_width_dict = {}
+        n_frames = []
 
-        # generate a new synced video 
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        cam_video_outpath = os.path.join(session_path, f'{cam_name}.mp4')
-        writer = cv2.VideoWriter(cam_video_outpath, fourcc, fps, (width, height))
+        for cam_name in cam_names: 
 
-        for i, frame in enumerate(cam_frames): 
-
-            if i == self.debug_ix:
-                break
-
-            video_ix = frame // chunk_size
+            # get frames for synchronization
+            cam_frames = sync_dict[cam_name][start_frame:start_frame + chunk_size]
+            
+            # open video to get width and height
+            video_ix = cam_frames[0] // chunk_size
             cam_start_frame = start_frames[video_ix]
             cam_video_path = os.path.join(session_path, f'{session}-{cam_name}-{cam_start_frame}.mp4')
-            cam_outpath = os.path.join(trial_outpath, 'vid')
+            cap = cv2.VideoCapture(cam_video_path)
 
-            frame = io.get_frame_synced(
-                video_path = cam_video_path, 
-                outpath = cam_outpath, 
-                frame_ix = frame - cam_start_frame, 
-                frame_ix_synced = i)
+            height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            num_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            fps = int(cap.get(cv2.CAP_PROP_FPS))
             
-            writer.write(frame)
-        
-        writer.release()
+            video_info = {
+                'camera_height': height,
+                'camera_width': width,
+                'num_frames': num_frames
+            }
+
+            # generate a new synced video 
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            cam_video_outpath = os.path.join(video_outpath, f'{cam_name}.mp4')
+            writer = cv2.VideoWriter(cam_video_outpath, fourcc, fps, (width, height))
+
+            for i, frame in enumerate(cam_frames): 
+
+                if i == self.debug_ix:
+                    break
+
+                video_ix = frame // chunk_size
+                cam_start_frame = start_frames[video_ix]
+                cam_video_path = os.path.join(session_path, f'{session}-{cam_name}-{cam_start_frame}.mp4')
+
+                frame = io.get_frame_synced(
+                    video_path = cam_video_path, 
+                    frame_ix = frame - cam_start_frame, 
+                    frame_ix_synced = i)
+                
+                writer.write(frame)
+            
+            writer.release()
+            cam_height_dict[cam_name] = video_info['camera_height']
+            cam_width_dict[cam_name] = video_info['camera_width']
+            n_frames.append(video_info['num_frames'])
+
+        video_info = {
+            'cam_height_dict': cam_height_dict, 
+            'cam_width_dict': cam_width_dict, 
+            'n_frames': n_frames,
+        }
 
         return video_info
