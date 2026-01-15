@@ -28,9 +28,16 @@ class AniposeFlyDataset(BaseDataset):
         intrinsics_dict = {}
         extrinsics_dict = {}
         distortions_dict = {}
+        offset_dict = {}
 
-        with open(calib_path, 'r') as f:
+        calib_file = os.path.join(calib_path, 'Calibration', 'calibration.toml')
+        config_file = os.path.join(calib_path, 'config.toml')
+
+        with open(calib_file, 'r') as f:
             data = toml.load(f)
+
+        with open(config_file, 'r') as f:
+            config = toml.load(f)
 
         cams = list(data.keys())
 
@@ -41,6 +48,7 @@ class AniposeFlyDataset(BaseDataset):
 
             cam_data = data[cam]
             cam_name = cam_data['name']
+            offset = config['cameras'][cam_name]['offset']
 
             rvec = np.array(cam_data['rotation'])
             tvec = np.array(cam_data['translation'])
@@ -51,8 +59,9 @@ class AniposeFlyDataset(BaseDataset):
             intrinsics_dict[cam_name] = cam_data['matrix']
             extrinsics_dict[cam_name] = extrinsics.tolist()
             distortions_dict[cam_name] = cam_data['distortions']
+            offset_dict[cam_name] = offset[:2]
 
-        return intrinsics_dict, extrinsics_dict, distortions_dict
+        return intrinsics_dict, extrinsics_dict, distortions_dict, offset_dict
 
     def load_pose3d(self, data_path):
 
@@ -72,18 +81,17 @@ class AniposeFlyDataset(BaseDataset):
         return pose3d_dict
 
     def generate_metadata(self):
-
-        calib_path = os.path.join(self.dataset_path, 'Calibration', 'calibration.toml')
+        
         subjects = io.get_dirs(self.dataset_path)
         rows = []
 
-        for subject in subjects:
+        for subject in subjects: 
 
             if subject == 'Calibration': 
                 continue 
 
             subject_path = os.path.join(self.dataset_path, subject)
-            metadata_rows = self._get_trials(calib_path, subject_path, subject)
+            metadata_rows = self._get_trials(subject_path, subject)
             rows.extend(metadata_rows)
 
         os.makedirs('metadata', exist_ok = True)
@@ -94,18 +102,13 @@ class AniposeFlyDataset(BaseDataset):
 
         return df
 
-    def select_train_set(self):
-        # TODO
-        pass 
-
-    def select_test_set(self):  
+    def select_splits(self):
         # TODO
         pass 
 
     def generate_dataset(self): 
 
         os.makedirs(self.dataset_outpath, exist_ok = True)
-        calib_path = os.path.join(self.dataset_path, 'Calibration', 'calibration.toml')
         subjects = io.get_dirs(self.dataset_path)
 
         for subject in subjects: 
@@ -116,7 +119,12 @@ class AniposeFlyDataset(BaseDataset):
             subject_path = os.path.join(self.dataset_path, subject)
             outpath = os.path.join(self.dataset_outpath, subject)
             os.makedirs(outpath, exist_ok = True)
-            self._process_subject(calib_path, subject_path, outpath)
+            self._process_subject(subject_path, outpath)
+
+            # clean up any empty directories
+            if len(os.listdir(outpath)) == 0:
+                # print(f'removing: {outpath}')
+                os.rmdir(outpath)
 
     def get_metadata(self):
         return self.metadata
@@ -124,9 +132,9 @@ class AniposeFlyDataset(BaseDataset):
     def set_metadata(self, df): 
         self.metadata = df 
 
-    def _get_trials(self, calib_path, subject_path, subject): 
+    def _get_trials(self, subject_path, subject): 
 
-        intrinsics_dict, *_ = self.load_calibration(calib_path)
+        intrinsics_dict, *_ = self.load_calibration(self.dataset_path)
         n_cams = len(intrinsics_dict)
 
         video_paths = sorted(glob.glob(os.path.join(subject_path, 'videos-raw-compressed', '*.mp4')))
@@ -152,7 +160,7 @@ class AniposeFlyDataset(BaseDataset):
                         'n_cameras': n_cams, 
                         'n_frames': n_frames,
                         'total_frames': n_frames * n_cams,
-                        'split': pd.NA,
+                        'split': 'train',
                         'include': True}
             
                 unique_trials.add(trial)
@@ -161,10 +169,10 @@ class AniposeFlyDataset(BaseDataset):
         return rows
     
 
-    def _process_subject(self, calib_path, subject_path, outpath): 
+    def _process_subject(self, subject_path, outpath): 
         
         # load calibration data
-        intrinsics, extrinsics, distortions = self.load_calibration(calib_path)
+        intrinsics, extrinsics, distortions, offset_dict = self.load_calibration(self.dataset_path)
         cam_names = list(intrinsics.keys())
 
         video_info_dict = defaultdict(dict)
@@ -181,16 +189,16 @@ class AniposeFlyDataset(BaseDataset):
                 trial = os.path.splitext(os.path.basename(video_path))[0]
                 trial = ' '.join(trial.split(' ')[:2]) + '  ' + ' '.join(trial.split(' ')[3:])
                 trial_outpath = os.path.join(outpath, trial)
-                os.makedirs(trial_outpath, exist_ok = True)
 
                 # skip trial if metadata excludes it 
                 if self.metadata is not None: 
                     df = self.metadata[self.metadata['id'] == trial]
-                    if not df['include'].values[0]: 
+                    if len(df) == 0 or not df['include'].values[0]: 
                         # print('skipping...')
                         continue
 
                 # load and format the 3d annotations
+                os.makedirs(trial_outpath, exist_ok = True)
                 data_path = os.path.join(subject_path, 'pose-3d', f'{trial}.csv')
                 pose_dict = self.load_pose3d(data_path)
                 io.save_npz(pose_dict, trial_outpath, fname = 'pose3d')
@@ -226,6 +234,7 @@ class AniposeFlyDataset(BaseDataset):
                     'intrinsic_matrices': intrinsics, 
                     'extrinsic_matrices': extrinsics, 
                     'distortion_matrices': distortions,
+                    'offset_dict': offset_dict,
                     'camera_heights': cam_height_dict,
                     'camera_widths': cam_width_dict,
                     'num_frames': min(n_frames), 
