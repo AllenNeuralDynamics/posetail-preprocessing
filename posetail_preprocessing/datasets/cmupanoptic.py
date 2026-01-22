@@ -405,8 +405,8 @@ class CMUPanopticDataset(BaseDataset):
                 start_frame = 0, 
                 debug_ix = self.debug_ix)
 
-        cam_height_dict[cam_name] = video_info['camera_height']
-        cam_width_dict[cam_name] = video_info['camera_width']
+        cam_height_dict[cam_name] = video_info['camera_heights']
+        cam_width_dict[cam_name] = video_info['camera_widths']
         num_frames.append(video_info['num_frames'])
         fps.append(video_info['fps'])
 
@@ -437,8 +437,8 @@ class CMUPanopticDataset(BaseDataset):
 
             # extract info from the video     
             video_info = io.get_video_info(cam_video_path)
-            cam_height_dict[cam_name] = video_info['camera_height']
-            cam_width_dict[cam_name] = video_info['camera_width']
+            cam_height_dict[cam_name] = video_info['camera_heights']
+            cam_width_dict[cam_name] = video_info['camera_widths']
             num_frames.append(video_info['num_frames'])
             fps.append(video_info['fps'])
 

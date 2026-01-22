@@ -89,26 +89,45 @@ class DukeMouseDataset(BaseDataset):
 
         return df
 
-    def select_train_set(self):
-        # TODO
-        pass 
 
-    def select_test_set(self):  
-        # TODO
-        pass 
+    def select_splits(self):
+        
+        subject_splits = [{'m1', 'm2'},  {'m3'},  {'m4', 'm5'}]
+        splits = ['train', 'val', 'test']
 
+        for i, subjects in enumerate(subject_splits):
+            self.metadata.loc[self.metadata['subject'].isin(subjects), 'split'] = splits[i]
 
-    def generate_dataset(self): 
+        return self.metadata
+    
 
-        os.makedirs(self.dataset_outpath, exist_ok = True)
-        subjects = io.get_dirs(self.dataset_path)
+    def generate_dataset(self, splits = None): 
 
-        for subject in subjects: 
+        # determine which dataset splits to generate
+        valid_splits = np.unique(self.metadata['split'])
 
-            subject_path = os.path.join(self.dataset_path, subject)
-            outpath = os.path.join(self.dataset_outpath, subject)
-            os.makedirs(outpath, exist_ok = True)
-            self._process_subject(subject_path, outpath, subject)
+        if splits is not None: 
+            splits = set(splits)
+            assert splits.issubset(valid_splits) 
+        else: 
+            splits = valid_splits
+
+        # generate the dataset for each split 
+        for split in splits: 
+
+            subjects = io.get_dirs(self.dataset_path)
+
+            for subject in subjects: 
+
+                subject_path = os.path.join(self.dataset_path, subject)
+                outpath = os.path.join(self.dataset_outpath, split, subject)
+                os.makedirs(outpath, exist_ok = True)
+                self._process_subject(subject_path, outpath, subject)
+
+                # clean up any empty directories
+                if len(os.listdir(outpath)) == 0:
+                    os.rmdir(outpath)
+        
 
     def get_metadata(self):
         return self.metadata
@@ -161,7 +180,11 @@ class DukeMouseDataset(BaseDataset):
         return rows
     
 
-    def _process_subject(self, subject_path, outpath, subject): 
+    def _process_subject(self, subject_path, outpath, subject, 
+                         split, chunk_size = 60000): 
+
+        # select the metadata for the given split
+        metadata = self.metadata[self.metadata['split'] == split]
 
         # load calibration data
         calib_path = os.path.join(subject_path, 'annotations.mat')
@@ -170,15 +193,9 @@ class DukeMouseDataset(BaseDataset):
         video_dir = os.path.join(subject_path, 'videos')
         cam_names = io.get_dirs(video_dir) 
         video_paths = sorted(glob.glob(os.path.join(video_dir, cam_names[-1], '*.mp4')))
-        alt_video_paths = sorted(glob.glob(os.path.join(video_dir, cam_names[0], '*.mp4')))
 
-        # check if the 3d annotations exist 
-        data_path = os.path.join(subject_path, f'save_data_AVG0_{subject}.mat')
-        if not os.path.isfile(data_path): 
-            print(f'skipping... could not find {data_path}')
-            return
-        
         # load and format the 3d annotations
+        data_path = os.path.join(subject_path, f'save_data_AVG0_{subject}.mat')
         pose_dict = self.load_pose3d(data_path)
         pose = pose_dict['pose']
 
@@ -191,59 +208,79 @@ class DukeMouseDataset(BaseDataset):
             trial_outpath = os.path.join(outpath, str(start_frame))
 
             # skip video if metadata excludes it 
-            if self.metadata is not None: 
-                df = self.metadata[self.metadata['id'] == f'{subject}_{start_frame}']
-                if not df['include'].values[0]: 
+            if metadata is not None: 
+                df = metadata[metadata['id'] == f'{subject}_{start_frame}']
+                if df.empty or not df['include'].values[0]: 
                     # print('skipping...')
                     continue
 
             # load and format the 3d annotations
-            pose_dict_subset = {'pose': pose[start_frame: start_frame + 3500, :, :], 
+            pose_dict_subset = {'pose': pose[start_frame: start_frame + chunk_size, :, :], 
                                 'keypoints': pose_dict['keypoints']}
             io.save_npz(pose_dict_subset, trial_outpath, fname = 'pose3d')
 
-            # deserialize the camera videos and save as images 
-            cam_height_dict = {}
-            cam_width_dict = {}
-            n_frames = []
-
-            for cam_name in cam_names: 
-
-                cam_video_path = os.path.join(video_dir, cam_name, video_name)
-                cam_outpath = os.path.join(trial_outpath, 'img', cam_name)
-
-                video_info = io.deserialize_video(
-                    cam_video_path, 
-                    cam_outpath, 
-                    start_frame = 0, 
-                    debug_ix = self.debug_ix)
-                
-                if subject == 'm4' and cam_name == 'Camera1':
-
-                    for alt_video_path in alt_video_paths:
-
-                        alt_video_name = os.path.basename(alt_video_path)
-                        alt_start_frame = int(os.path.splitext(alt_video_name)[0])
-
-                        video_info = io.deserialize_video(
-                            alt_video_path, 
-                            cam_outpath, 
-                            start_frame = alt_start_frame, 
-                            debug_ix = self.debug_ix)
-
-                cam_height_dict[cam_name] = video_info['camera_height']
-                cam_width_dict[cam_name] = video_info['camera_width']
-                n_frames.append(video_info['num_frames'])
+            # process trial depending on the split
+            if split == 'test': 
+                # for test set, save as videos
+                video_info = self._process_subject_test(
+                    video_dir, start_frame, cam_names, subject, trial_outpath)
+            else: 
+                # for train and validation sets, deserialize the camera videos 
+                # and save as images  
+                video_info = self._process_subject_train()
 
             calib_dict = {
                 'intrinsic_matrices': intrinsics, 
                 'extrinsic_matrices': extrinsics, 
                 'distortion_matrices': distortions,
-                'camera_heights': cam_height_dict,
-                'camera_widths': cam_width_dict,
-                'num_frames': max(n_frames), 
-                'num_cameras': len(intrinsics)}
+                'num_cameras': len(intrinsics)
+            }
+            calib_dict.update(video_info)
 
             # save camera metadata
             io.save_yaml(data = calib_dict, outpath = trial_outpath, 
                     fname = 'metadata.yaml')
+            
+
+    def _process_subject_train(self, video_dir, start_frame, cam_names, 
+                               subject, trial_outpath):
+        
+        # deserialize the camera videos and save as images 
+        cam_height_dict = {}
+        cam_width_dict = {}
+        n_frames = []
+
+        for cam_name in cam_names: 
+
+            cam_video_path = os.path.join(video_dir, cam_name, f'{start_frame}.mp4')
+            cam_outpath = os.path.join(trial_outpath, 'img', cam_name)
+
+            video_info = io.deserialize_video(
+                cam_video_path, 
+                cam_outpath, 
+                start_frame = 0, 
+                debug_ix = self.debug_ix)
+            
+            # this specific subject/camera pair have multiple videos recorded 
+            # rather than just one like the other cameras, so it must be 
+            # handled separately
+            if subject == 'm4' and cam_name == 'Camera1':
+
+                alt_video_paths = sorted(glob.glob(os.path.join(video_dir, 'Camera1', '*.mp4')))
+
+                for alt_video_path in alt_video_paths:
+
+                    alt_video_name = os.path.basename(alt_video_path)
+                    alt_start_frame = int(os.path.splitext(alt_video_name)[0])
+
+                    video_info = io.deserialize_video(
+                        alt_video_path, 
+                        cam_outpath, 
+                        start_frame = alt_start_frame, 
+                        debug_ix = self.debug_ix)
+
+            cam_height_dict[cam_name] = video_info['camera_heights']
+            cam_width_dict[cam_name] = video_info['camera_widths']
+            n_frames.append(video_info['num_frames'])
+
+        return video_info

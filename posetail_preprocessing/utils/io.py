@@ -86,8 +86,8 @@ def get_video_info(video_path):
     cap = cv2.VideoCapture(video_path)
 
     video_info = {
-        'camera_height': int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)),
-        'camera_width': int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
+        'camera_heights': int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)),
+        'camera_widths': int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
         'num_frames': int(cap.get(cv2.CAP_PROP_FRAME_COUNT)),
         'fps': int(cap.get(cv2.CAP_PROP_FPS))
     }
@@ -101,8 +101,8 @@ def deserialize_video(video_path, outpath, start_frame = 0, debug_ix = None, zfi
     cap = cv2.VideoCapture(video_path)
 
     video_info = {
-        'camera_height': int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)),
-        'camera_width': int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
+        'camera_heights': int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)),
+        'camera_widths': int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
         'num_frames': int(cap.get(cv2.CAP_PROP_FRAME_COUNT)),
         'fps': int(cap.get(cv2.CAP_PROP_FPS))
     }
@@ -138,8 +138,8 @@ def save_frame_synced(video_path, outpath, frame_ix,
     cap = cv2.VideoCapture(video_path)
 
     video_info = {
-        'camera_height': int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)),
-        'camera_width': int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
+        'camera_heights': int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)),
+        'camera_widths': int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
         'num_frames': int(cap.get(cv2.CAP_PROP_FRAME_COUNT)), 
         'fps': int(cap.get(cv2.CAP_PROP_FPS))
     }

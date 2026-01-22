@@ -216,7 +216,6 @@ class AniposeFlyDataset(BaseDataset):
             trial = f'{cs[0]} {cs[1]}  {cs[3]} {cs[4]}'
             trials.add(trial)
 
-        # TODO: handle dataset split: trial should ideally be moved to outer loop
         # traverse the camera names
         for trial in trials: 
 
@@ -284,8 +283,8 @@ class AniposeFlyDataset(BaseDataset):
                 cam_outpath, 
                 debug_ix = self.debug_ix)
             
-            cam_height_dict[cam_name] = video_info['camera_height']
-            cam_width_dict[cam_name] = video_info['camera_width']
+            cam_height_dict[cam_name] = video_info['camera_heights']
+            cam_width_dict[cam_name] = video_info['camera_widths']
             num_frames.append(video_info['num_frames'])
             fps.append(video_info['fps'])
 
@@ -315,8 +314,8 @@ class AniposeFlyDataset(BaseDataset):
             cam_name = cam_trial.split(' ')[2].split('-')[1]
 
             video_info = io.get_video_info(cam_video_path)
-            cam_height_dict[cam_name] = video_info['camera_height']
-            cam_width_dict[cam_name] = video_info['camera_width']
+            cam_height_dict[cam_name] = video_info['camera_heights']
+            cam_width_dict[cam_name] = video_info['camera_widths']
             num_frames.append(video_info['num_frames'])
             fps.append(video_info['fps'])
 

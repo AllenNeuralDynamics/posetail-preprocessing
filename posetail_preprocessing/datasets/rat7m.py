@@ -417,8 +417,8 @@ class Rat7MDataset(BaseDataset):
                     frame_ix = frame - cam_start_frame, 
                     frame_ix_synced = i)
             
-                cam_height_dict[cam_name] = video_info['camera_height']
-                cam_width_dict[cam_name] = video_info['camera_width']
+                cam_height_dict[cam_name] = video_info['camera_heights']
+                cam_width_dict[cam_name] = video_info['camera_widths']
                 num_frames.append(video_info['num_frames'])
                 fps.append(video_info['fps'])
 
@@ -461,7 +461,7 @@ class Rat7MDataset(BaseDataset):
             fourcc = cv2.VideoWriter_fourcc(*'mp4v')
             cam_video_outpath = os.path.join(video_outpath, f'{cam_name}.mp4')
             writer = cv2.VideoWriter(cam_video_outpath, fourcc, video_info['fps'], 
-                                    (video_info['camera_width'], video_info['camera_height']))
+                                    (video_info['camera_widths'], video_info['camera_heights']))
 
             for i, frame in enumerate(cam_frames): 
 
@@ -480,8 +480,8 @@ class Rat7MDataset(BaseDataset):
                 writer.write(frame)
             
             writer.release()
-            cam_height_dict[cam_name] = video_info['camera_height']
-            cam_width_dict[cam_name] = video_info['camera_width']
+            cam_height_dict[cam_name] = video_info['camera_heights']
+            cam_width_dict[cam_name] = video_info['camera_widths']
             num_frames.append(video_info['num_frames'])
             fps.append(video_info['fps'])
 
