@@ -99,7 +99,7 @@ class DexYCBDataset(BaseDataset):
         return self.metadata
 
     def generate_dataset(self, splits = None): 
-
+        
         # determine which dataset splits to generate
         valid_splits = np.unique(self.metadata['split'])
 
