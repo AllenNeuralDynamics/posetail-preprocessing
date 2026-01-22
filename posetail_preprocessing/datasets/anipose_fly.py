@@ -104,8 +104,23 @@ class AniposeFlyDataset(BaseDataset):
         return df
 
     def select_splits(self):
-        # TODO
-        pass 
+        
+        # NOTE: add arbitrary splits for testing offsets 
+        subject_splits = [{'Fly 4_0'}, {'Fly 5_0'}]
+        splits = ['val', 'test']
+
+        for i, subjects in enumerate(subject_splits):
+            self.metadata.loc[self.metadata['subject'].isin(subjects), 'split'] = splits[i]
+
+        # only select 2 validation samples to use
+        val_mask = self.metadata['split'] == 'val'
+        self.metadata.loc[val_mask, 'include'] = False
+
+        val_ixs = self.metadata.loc[val_mask].sample(n = 2, random_state = 3).index
+        self.metadata.loc[val_ixs, 'include'] = True
+
+
+        return self.metadata
 
     def generate_dataset(self, splits = None): 
 
@@ -291,7 +306,7 @@ class AniposeFlyDataset(BaseDataset):
         fps = []
 
         outpath = os.path.join(trial_outpath, 'vid')
-        os.path.makedirs(outpath, exist_ok = True)
+        os.makedirs(outpath, exist_ok = True)
 
         for cam_video_path in video_paths: 
 
