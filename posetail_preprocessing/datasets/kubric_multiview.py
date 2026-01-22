@@ -100,8 +100,18 @@ class KubricMultiviewDataset(BaseDataset):
         return df
 
     def select_splits(self):  
-        # TODO 
-        # mostly handled in self._get_session(), subsample here as necessary
+        '''
+        mostly handled in self._get_session(), can 
+        further subsample here
+        '''
+
+        # only select 2 validation samples to use
+        val_mask = self.metadata['split'] == 'val'
+        self.metadata.loc[val_mask, 'include'] = False
+
+        val_ixs = self.metadata.loc[val_mask].sample(n = 2, random_state = 3).index
+        self.metadata.loc[val_ixs, 'include'] = True
+
         return self.metadata 
 
     def select_train_set(self, n_train_videos = 25, seed = 3):
