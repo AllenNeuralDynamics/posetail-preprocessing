@@ -281,8 +281,8 @@ class POPDataset(BaseDataset):
             fps.append(video_info['fps'])
 
         video_info = {
-            'cam_height_dict': cam_height_dict, 
-            'cam_width_dict': cam_width_dict, 
+            'cam_heights': cam_height_dict, 
+            'cam_widths': cam_width_dict, 
             'num_frames': min(num_frames),
             'fps': min(fps)
         }
@@ -318,8 +318,8 @@ class POPDataset(BaseDataset):
             shutil.copy2(cam_video_path, cam_video_outpath)
 
         video_info = {
-            'cam_height_dict': cam_height_dict, 
-            'cam_width_dict': cam_width_dict, 
+            'cam_heights': cam_height_dict, 
+            'cam_widths': cam_width_dict, 
             'num_frames': min(num_frames),
             'fps': min(fps)
         }

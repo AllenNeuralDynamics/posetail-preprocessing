@@ -248,7 +248,8 @@ class DukeMouseDataset(BaseDataset):
         # deserialize the camera videos and save as images 
         cam_height_dict = {}
         cam_width_dict = {}
-        n_frames = []
+        num_frames = []
+        fps = []
 
         for cam_name in cam_names: 
 
@@ -281,6 +282,14 @@ class DukeMouseDataset(BaseDataset):
 
             cam_height_dict[cam_name] = video_info['camera_heights']
             cam_width_dict[cam_name] = video_info['camera_widths']
-            n_frames.append(video_info['num_frames'])
+            num_frames.append(video_info['num_frames'])
+            fps.append(video_info['fps'])
+
+        video_info = {
+            'cam_heights': cam_height_dict, 
+            'cam_widths': cam_width_dict, 
+            'num_frames': num_frames,
+            'fps': fps
+        }
 
         return video_info
