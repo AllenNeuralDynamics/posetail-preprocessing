@@ -101,7 +101,7 @@ class DexYCBDataset(BaseDataset):
     def generate_dataset(self, splits = None): 
 
         # determine which dataset splits to generate
-        valid_splits = {'train', 'val', 'test'}
+        valid_splits = np.unique(self.metadata['split'])
 
         if splits is not None: 
             splits = set(splits)

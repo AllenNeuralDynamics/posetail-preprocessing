@@ -89,7 +89,7 @@ class CMUPanopticGSDataset(BaseDataset):
     def generate_dataset(self, splits = None): 
 
         # determine which dataset splits to generate
-        valid_splits = {'train', 'val', 'test'}
+        valid_splits = np.unique(self.metadata['split'])
 
         if splits is not None: 
             splits = set(splits)
@@ -156,7 +156,6 @@ class CMUPanopticGSDataset(BaseDataset):
         metadata = self.metadata[self.metadata['split'] == split]
 
         # specify conditions to process the session
-        process = True
         session_path = os.path.join(self.dataset_path, session)
         data_path = os.path.join(self.dataset_path, session, 'tapvid3d_annotations.npz')
         calib_paths = glob.glob(os.path.join(session_path, '*.json'))
@@ -168,15 +167,14 @@ class CMUPanopticGSDataset(BaseDataset):
             if split != calib_split: 
                 continue
 
-            print(calib_path)
             intrinsics, extrinsics, distortions, _ = self.load_calibration(calib_path)
             cam_names = list(intrinsics.keys())
 
             # skip if metadata excludes it 
-            if metadata is not None: 
-                df = metadata[metadata['id'] == f'{session}_{split}']
-                if df.empty or not df['include'].values[0]: 
-                    process = False
+            process = True
+            df = metadata[metadata['id'] == f'{session}_{split}']
+            if df.empty or not df['include'].values[0]: 
+                process = False
 
             if process:
                 

@@ -104,30 +104,52 @@ class ZefDataset(BaseDataset):
 
         return df
 
-    def select_train_set(self):
-        # TODO
-        pass 
+    def select_splits(self):
 
-    def select_test_set(self):  
-        # TODO
-        pass 
+        subject_splits = [{'ZebraFish-01', 'ZebraFish-02'},
+                          {'ZebraFish-03', 'ZebraFish-04'}]
+        splits = ['train', 'test']
 
-    def generate_dataset(self): 
+        for i, subjects in enumerate(subject_splits):
+            self.metadata.loc[self.metadata['subject'].isin(subjects), 'split'] = splits[i]
 
-        os.makedirs(self.dataset_outpath, exist_ok = True)
-        splits = io.get_dirs(self.dataset_path)
+        return self.metadata
 
+    def generate_dataset(self, splits = None): 
+
+        # determine which dataset splits to generate
+        valid_splits = np.unique(self.metadata['split'])
+
+        if splits is not None: 
+            splits = set(splits)
+            assert splits.issubset(valid_splits) 
+        else: 
+            splits = valid_splits
+
+        # generate the dataset for each split
         for split in splits: 
 
-            split_path = os.path.join(self.dataset_path, split)
-            sessions = io.get_dirs(split_path)
+            if split is None: 
+                continue
 
-            for session in sessions: 
+            orig_splits = io.get_dirs(self.dataset_path)
 
-                session_path = os.path.join(split_path, session)
-                outpath = os.path.join(self.dataset_outpath, session)
-                os.makedirs(outpath, exist_ok = True)
-                self._process_session(session_path, outpath, session)
+            for orig_split in orig_splits: 
+
+                orig_split_path = os.path.join(self.dataset_path, orig_split)
+                sessions = io.get_dirs(orig_split_path)
+
+                for session in sessions: 
+
+                    session_path = os.path.join(orig_split_path, session)
+                    outpath = os.path.join(self.dataset_outpath, split, session)
+                    os.makedirs(outpath, exist_ok = True)
+                    self._process_session(session_path, outpath, session, split)
+                
+                    # clean up any empty directories
+                    if len(os.listdir(outpath)) == 0:
+                        os.rmdir(outpath)
+
 
     def get_metadata(self):
         return self.metadata
@@ -186,19 +208,20 @@ class ZefDataset(BaseDataset):
         return rows
     
 
-    def _process_session(self, session_path, outpath, session): 
+    def _process_session(self, session_path, outpath, session, split): 
 
-        # specify conditions to process the session
-        process = True
+        # select subset of metadata associated with the split 
+        metadata = self.metadata[self.metadata['split'] == split]
 
         # load calibration data
         intrinsics, extrinsics, distortions = self.load_calibration(session_path)
 
+        # specify conditions to process the session and 
         # skip if metadata excludes it 
-        if self.metadata is not None: 
-            df = self.metadata[self.metadata['id'] == session]
-            if not df['include'].values[0]: 
-                process = False
+        process = True
+        df = metadata[metadata['id'] == session]
+        if df.empty or not df['include'].values[0]: 
+            process = False
 
         # check if the 3d annotations exist 
         data_path = os.path.join(session_path, 'gt', 'gt.txt')
@@ -220,6 +243,9 @@ class ZefDataset(BaseDataset):
 
             for cam_name in cam_names:
 
+                cam_outpath = os.path.join(outpath, 'trial', 'img', cam_name)
+                os.makedirs(cam_outpath, exist_ok = True)
+
                 img_path = os.path.join(session_path, f'img{cam_name}')
                 imgs = sorted(glob.glob(os.path.join(img_path, '*.jpg')))
                 img = cv2.imread(imgs[0])
@@ -228,7 +254,7 @@ class ZefDataset(BaseDataset):
                 cam_width_dict[cam_name] = img.shape[1]
                 n_frames.append(len(imgs))
 
-                shutil.copytree(img_path, outpath, dirs_exist_ok = True)
+                shutil.copytree(img_path, cam_outpath, dirs_exist_ok = True)
 
             cam_dict = {
                 'intrinsic_matrices': intrinsics, 

@@ -1,0 +1,22 @@
+# from cheetah.pickle
+keypoints:
+  - nose
+  - r_eye
+  - l_eye
+  - neck_base
+  - spine
+  - tail_base
+  - tail1
+  - tail2
+  - l_shoulder
+  - l_front_knee
+  - l_front_ankle
+  - r_shoulder
+  - r_front_knee
+  - r_front_ankle
+  - l_hip
+  - l_back_knee
+  - l_back_ankle
+  - r_hip
+  - r_back_knee
+  - r_back_ankle

@@ -2,6 +2,7 @@ import glob
 import os 
 import cv2
 import toml
+import shutil
 
 import numpy as np
 import pandas as pd 
@@ -106,25 +107,35 @@ class AniposeFlyDataset(BaseDataset):
         # TODO
         pass 
 
-    def generate_dataset(self): 
+    def generate_dataset(self, splits = None): 
 
-        os.makedirs(self.dataset_outpath, exist_ok = True)
-        subjects = io.get_dirs(self.dataset_path)
+        # determine which dataset splits to generate
+        valid_splits = np.unique(self.metadata['split'])
 
-        for subject in subjects: 
+        if splits is not None: 
+            splits = set(splits)
+            assert splits.issubset(valid_splits) 
+        else: 
+            splits = valid_splits
 
-            if 'Fly' not in subject: 
-                continue
+        # generate the dataset for each split
+        for split in splits: 
 
-            subject_path = os.path.join(self.dataset_path, subject)
-            outpath = os.path.join(self.dataset_outpath, subject)
-            os.makedirs(outpath, exist_ok = True)
-            self._process_subject(subject_path, outpath)
+            subjects = io.get_dirs(self.dataset_path)
 
-            # clean up any empty directories
-            if len(os.listdir(outpath)) == 0:
-                # print(f'removing: {outpath}')
-                os.rmdir(outpath)
+            for subject in subjects: 
+
+                if 'Fly' not in subject: 
+                    continue
+
+                subject_path = os.path.join(self.dataset_path, subject)
+                outpath = os.path.join(self.dataset_outpath, split, subject)
+                os.makedirs(outpath, exist_ok = True)
+                self._process_subject(subject_path, outpath, split)
+
+                # clean up any empty directories
+                if len(os.listdir(outpath)) == 0:
+                    os.rmdir(outpath)
 
     def get_metadata(self):
         return self.metadata
@@ -144,7 +155,8 @@ class AniposeFlyDataset(BaseDataset):
         for i, video_path in enumerate(video_paths):
 
             trial = os.path.splitext(os.path.basename(video_path))[0]
-            trial = ' '.join(trial.split(' ')[:2]) + '  ' + ' '.join(trial.split(' ')[3:])
+            cs = trial.split(' ')
+            trial = f'{cs[0]} {cs[1]}  {cs[3]} {cs[4]}'
 
             cap = cv2.VideoCapture(video_path)
             n_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
@@ -154,9 +166,9 @@ class AniposeFlyDataset(BaseDataset):
 
                 metadata_dict = {
                         'id': trial,
-                        'session': trial, 
+                        'session': subject, 
                         'subject': subject, 
-                        'trial': i,
+                        'trial': trial,
                         'n_cameras': n_cams, 
                         'n_frames': n_frames,
                         'total_frames': n_frames * n_cams,
@@ -169,78 +181,139 @@ class AniposeFlyDataset(BaseDataset):
         return rows
     
 
-    def _process_subject(self, subject_path, outpath): 
-        
+    def _process_subject(self, subject_path, outpath, split): 
+
+        # select subset of metadata associated with the split 
+        metadata = self.metadata[self.metadata['split'] == split]
+
         # load calibration data
         intrinsics, extrinsics, distortions, offset_dict = self.load_calibration(self.dataset_path)
         cam_names = list(intrinsics.keys())
-
         video_info_dict = defaultdict(dict)
 
+        video_paths = sorted(glob.glob(os.path.join(subject_path, 'videos-raw-compressed', f'*.mp4')))
+        trials = set()
+
+        for i, video_path in enumerate(video_paths): 
+
+            trial = os.path.splitext(os.path.basename(video_path))[0]
+            cs = trial.split(' ')
+            trial = f'{cs[0]} {cs[1]}  {cs[3]} {cs[4]}'
+            trials.add(trial)
+
+        # TODO: handle dataset split: trial should ideally be moved to outer loop
         # traverse the camera names
-        for cam_name in cam_names: 
+        for trial in trials: 
 
-            video_paths = sorted(glob.glob(os.path.join(subject_path, 'videos-raw-compressed', f'*Cam-{cam_name}*.mp4')))
+            # get videos from each camera corresponding to this trial
+            cs = os.path.basename(trial).split(' ')
+            cam_videos = os.path.join(subject_path, 'videos-raw-compressed', f'{cs[0]} {cs[1]}*{cs[3]} {cs[4]}.mp4')
+            cam_videos = sorted(glob.glob(cam_videos))
 
-            # traverse the videos associated with the camera
-            for video_path in video_paths:
+            # skip trial if metadata excludes it 
+            df = metadata[metadata['id'] == trial]
+            if df.empty or not df['include'].values[0]: 
+                # print('skipping...')
+                continue
 
-                # extract name of trial 
-                trial = os.path.splitext(os.path.basename(video_path))[0]
-                trial = ' '.join(trial.split(' ')[:2]) + '  ' + ' '.join(trial.split(' ')[3:])
-                trial_outpath = os.path.join(outpath, trial)
-
-                # skip trial if metadata excludes it 
-                if self.metadata is not None: 
-                    df = self.metadata[self.metadata['id'] == trial]
-                    if len(df) == 0 or not df['include'].values[0]: 
-                        # print('skipping...')
-                        continue
-
-                # load and format the 3d annotations
-                os.makedirs(trial_outpath, exist_ok = True)
-                data_path = os.path.join(subject_path, 'pose-3d', f'{trial}.csv')
-                pose_dict = self.load_pose3d(data_path)
-                io.save_npz(pose_dict, trial_outpath, fname = 'pose3d')
-
-                # deserialize video into images
-                cam_outpath = os.path.join(trial_outpath, 'img', cam_name)
-                os.makedirs(cam_outpath, exist_ok = True)
-
-                video_info = io.deserialize_video(
-                    video_path, 
-                    cam_outpath, 
-                    debug_ix = self.debug_ix)
-                
-                video_info_dict[trial][cam_name] = video_info
-
-        # save metadata
-        for trial in list(video_info_dict.keys()):
-
-            video_info = video_info_dict[trial]
+            # load and format the 3d annotations
             trial_outpath = os.path.join(outpath, trial)
+            os.makedirs(trial_outpath, exist_ok = True)
+            data_path = os.path.join(subject_path, 'pose-3d', f'{trial}.csv')
+            pose_dict = self.load_pose3d(data_path)
+            io.save_npz(pose_dict, trial_outpath, fname = 'pose3d')
 
-            cam_height_dict = {}
-            cam_width_dict = {}
-            n_frames = []
+            if split == 'test':  
+                # for test set, save as videos
+                video_info = self._process_subject_test(
+                    cam_videos, trial_outpath)
+            else: 
+                # for train and validation sets, deserialize the camera videos 
+                # and save as images  
+                video_info = self._process_subject_train(
+                    cam_videos, trial_outpath)
 
-            for cam_name in list(video_info.keys()): 
-                
-                cam_height_dict[cam_name] = video_info[cam_name]['camera_height']
-                cam_width_dict[cam_name] = video_info[cam_name]['camera_width']
-                n_frames.append(video_info[cam_name]['num_frames'])
+            calib_dict = {
+                'intrinsic_matrices': intrinsics, 
+                'extrinsic_matrices': extrinsics, 
+                'distortion_matrices': distortions,
+                'offset_dict': offset_dict,
+                'num_cameras': len(intrinsics)
+            }
+            calib_dict.update(video_info)
 
-                calib_dict = {
-                    'intrinsic_matrices': intrinsics, 
-                    'extrinsic_matrices': extrinsics, 
-                    'distortion_matrices': distortions,
-                    'offset_dict': offset_dict,
-                    'camera_heights': cam_height_dict,
-                    'camera_widths': cam_width_dict,
-                    'num_frames': min(n_frames), 
-                    'num_cameras': len(intrinsics)}
+            # save camera metadata
+            io.save_yaml(data = calib_dict, outpath = trial_outpath, 
+                    fname = 'metadata.yaml')
+        
 
-                # save camera metadata
-                io.save_yaml(data = calib_dict, outpath = trial_outpath, 
-                        fname = 'metadata.yaml')
+    def _process_subject_train(self, video_paths, trial_outpath): 
+
+        cam_height_dict = {}
+        cam_width_dict = {}
+        num_frames = []
+        fps = []
+
+        for cam_video_path in video_paths: 
             
+            # extract info from the video   
+            cam_trial = os.path.splitext(os.path.basename(cam_video_path))[0] 
+            cam_name = cam_trial.split(' ')[2].split('-')[1]
+
+            # deserialize video into images
+            cam_outpath = os.path.join(trial_outpath, 'img', cam_name)
+            os.makedirs(cam_outpath, exist_ok = True)
+
+            video_info = io.deserialize_video(
+                cam_video_path, 
+                cam_outpath, 
+                debug_ix = self.debug_ix)
+            
+            cam_height_dict[cam_name] = video_info['camera_height']
+            cam_width_dict[cam_name] = video_info['camera_width']
+            num_frames.append(video_info['num_frames'])
+            fps.append(video_info['fps'])
+
+        video_info = {
+            'cam_height_dict': cam_height_dict, 
+            'cam_width_dict': cam_width_dict, 
+            'num_frames': min(num_frames),
+            'fps': min(fps)
+        }
+
+        return video_info
+    
+    def _process_subject_test(self, video_paths, trial_outpath): 
+
+        cam_height_dict = {}
+        cam_width_dict = {}
+        num_frames = []
+        fps = []
+
+        outpath = os.path.join(trial_outpath, 'vid')
+        os.path.makedirs(outpath, exist_ok = True)
+
+        for cam_video_path in video_paths: 
+
+            # extract info from the video   
+            cam_trial = os.path.splitext(os.path.basename(cam_video_path))[0] 
+            cam_name = cam_trial.split(' ')[2].split('-')[1]
+
+            video_info = io.get_video_info(cam_video_path)
+            cam_height_dict[cam_name] = video_info['camera_height']
+            cam_width_dict[cam_name] = video_info['camera_width']
+            num_frames.append(video_info['num_frames'])
+            fps.append(video_info['fps'])
+
+            # copy video to desired location
+            cam_video_outpath = os.path.join(outpath, f'{cam_name}.mp4')
+            shutil.copy2(cam_video_path, cam_video_outpath)
+
+        video_info = {
+            'cam_height_dict': cam_height_dict, 
+            'cam_width_dict': cam_width_dict, 
+            'num_frames': min(num_frames),
+            'fps': min(fps)
+        }
+
+        return video_info

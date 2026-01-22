@@ -1,6 +1,7 @@
 import glob
 import os 
 import cv2
+import shutil
 
 import numpy as np
 import pandas as pd 
@@ -128,56 +129,84 @@ class AcinosetDataset(BaseDataset):
         return df
 
 
-    def generate_dataset(self): 
+    def generate_dataset(self, splits = None):
 
-        os.makedirs(self.dataset_outpath, exist_ok = True)
-        sessions = io.get_dirs(self.dataset_path)
+        # determine which dataset splits to generate
+        valid_splits = np.unique(self.metadata['split'])
 
-        for session in sessions: 
+        if splits is not None: 
+            splits = set(splits)
+            assert splits.issubset(valid_splits) 
+        else: 
+            splits = valid_splits
 
-            session_path = os.path.join(self.dataset_path, session)
-            dirs = io.get_dirs(session_path)
+        # generate the dataset for each split
+        for split in splits: 
 
-            if 'extrinsic_calib' in dirs: 
-                subjects = [d for d in dirs if d != 'extrinsic_calib']
+            sessions = io.get_dirs(self.dataset_path)
 
-                for subject in subjects: 
-                    id = f'{session}__{subject}'
-                    subject_path = os.path.join(session_path, subject)
-                    calib_path = os.path.join(session_path, 'extrinsic_calib')
-                    outpath = os.path.join(self.dataset_outpath, id)
-                    self._process_subject(subject_path, calib_path, outpath, id)
+            for session in sessions: 
 
-            else: 
-                for dir in dirs: 
-                    session_sub_path = os.path.join(session_path, dir)
-                    subject_dirs = io.get_dirs(session_sub_path)
-                    subjects = [d for d in subject_dirs if d != 'extrinsic_calib']
+                session_path = os.path.join(self.dataset_path, session)
+                dirs = io.get_dirs(session_path)
 
-                    if 'extrinsic_calib' not in subject_dirs: 
-                        print(f'could not find calibration data in {session_sub_path}')
+                if 'extrinsic_calib' in dirs: 
+                    subjects = [d for d in dirs if d != 'extrinsic_calib']
 
                     for subject in subjects: 
-                        id = f'{session}_{dir}_{subject}'
-                        subject_path = os.path.join(session_sub_path, subject)
-                        calib_path = os.path.join(session_sub_path, 'extrinsic_calib')
-                        outpath = os.path.join(self.dataset_outpath, id)
-                        self._process_subject(subject_path, calib_path, outpath, id)
+                        id = f'{session}__{subject}'
+                        subject_path = os.path.join(session_path, subject)
+                        calib_path = os.path.join(session_path, 'extrinsic_calib')
+                        outpath = os.path.join(self.dataset_outpath, split, id)
+                        os.makedirs(outpath, exist_ok = True)
+                        self._process_subject(subject_path, calib_path, outpath, id, split)
+
+                        # clean up any empty directories
+                        if len(os.listdir(outpath)) == 0:
+                            # print(outpath)
+                            os.rmdir(outpath)
+
+                else: 
+                    for dir in dirs: 
+                        session_sub_path = os.path.join(session_path, dir)
+                        subject_dirs = io.get_dirs(session_sub_path)
+                        subjects = [d for d in subject_dirs if d != 'extrinsic_calib']
+
+                        if 'extrinsic_calib' not in subject_dirs: 
+                            print(f'could not find calibration data in {session_sub_path}')
+
+                        for subject in subjects: 
+                            id = f'{session}_{dir}_{subject}'
+                            subject_path = os.path.join(session_sub_path, subject)
+                            calib_path = os.path.join(session_sub_path, 'extrinsic_calib')
+                            outpath = os.path.join(self.dataset_outpath, split, id)
+                            os.makedirs(outpath, exist_ok = True)
+                            self._process_subject(subject_path, calib_path, outpath, id, split)
+                    
+                            # clean up any empty directories
+                            if len(os.listdir(outpath)) == 0:
+                                os.rmdir(outpath)
 
 
-    def select_train_set(self):
-        # TODO
-        pass 
+    def select_splits(self):
 
-    def select_test_set(self):  
-        # TODO
-        pass 
+        subject_splits = [{'phantom', 'zorro', 'jules', 'cetane', 'lily', 'kiara',  'menya'},  
+                          {'ebony'},  {'romeo', 'big_girl'}]
+        splits = ['train', 'val', 'test']
+
+        for i, subjects in enumerate(subject_splits):
+            self.metadata.loc[self.metadata['subject'].isin(subjects), 'split'] = splits[i]
+
+        return self.metadata
+
 
     def get_metadata(self):
         return self.metadata
     
+
     def set_metadata(self, df): 
         self.metadata = df 
+
 
     def _get_trials(self, subject_path, session, subject, orientation = ''): 
 
@@ -215,13 +244,16 @@ class AcinosetDataset(BaseDataset):
                 'n_cameras': n_cams, 
                 'n_frames': n_frames,
                 'total_frames': n_frames * n_cams,
-                'split': pd.NA,
+                'split': 'train',
                 'include': True}
             rows.append(metadata_dict)
 
         return rows
     
-    def _process_subject(self, subject_path, calib_path, outpath, id): 
+    def _process_subject(self, subject_path, calib_path, outpath, id, split): 
+
+        # select subset of metadata associated with the split 
+        metadata = self.metadata[self.metadata['split'] == split]
 
         # get all trials associated with this subject
         trials = io.get_dirs(subject_path) 
@@ -230,7 +262,7 @@ class AcinosetDataset(BaseDataset):
         calib_paths = sorted(glob.glob(os.path.join(calib_path, '*_sba.json')))
         calib_dict = {}
 
-        # TODO: first get number of cams per subject then get the corresponding 
+        # first get number of cams per subject then get the corresponding 
         # calib path
         for calib_path in calib_paths:
             intrinsics, extrinsics, distortions = self.load_calibration(calib_path)
@@ -241,16 +273,10 @@ class AcinosetDataset(BaseDataset):
         for trial in trials: 
 
             # skip if metadata excludes it 
-            if self.metadata is not None: 
-
-                df = self.metadata[self.metadata['id'] == f'{id}_{trial}']
-
-                if len(df) != 1:
-                    continue
-                
-                if not df['include'].values[0]: 
-                    print('skipping...')
-                    continue
+            df = metadata[metadata['id'] == f'{id}_{trial}']
+            if df.empty or not df['include'].values[0]: 
+                # print('skipping...')
+                continue
 
             trial_path = os.path.join(subject_path, trial)
             cam_videos = sorted(glob.glob(os.path.join(trial_path, '*.mp4')))
@@ -265,12 +291,6 @@ class AcinosetDataset(BaseDataset):
             calib_path = calib_dict[n_cams]
             intrinsics, extrinsics, distortions = self.load_calibration(calib_path, cam_names)
 
-            cam_dict = {
-                'intrinsic_matrices': intrinsics, 
-                'extrinsic_matrices': extrinsics, 
-                'distortion_matrices': distortions
-            }
-
             # check if the 3d annotations exist 
             data_path = os.path.join(trial_path, 'fte_pw', 'fte.pickle')
             if not os.path.isfile(data_path): 
@@ -278,33 +298,92 @@ class AcinosetDataset(BaseDataset):
                 continue
 
             # load and format the 3d annotations
-            trial_path = os.path.join(outpath, trial)
+            trial_outpath = os.path.join(outpath, trial)
             pose_dict = self.load_pose3d(data_path)
-            io.save_npz(pose_dict, trial_path, fname = 'pose3d')
+            io.save_npz(pose_dict, trial_outpath, fname = 'pose3d')
 
-            # deserialize the camera videos and save as images 
-            cam_height_dict = {}
-            cam_width_dict = {}
-            n_frames = []
+            if split == 'test':  
+                # for test set, save as videos
+                video_info = self._process_subject_test(
+                    cam_videos, trial_outpath, cam_names)
+            else: 
+                # for train and validation sets, deserialize the camera videos 
+                # and save as images  
+                video_info = self._process_subject_train(
+                    cam_videos, trial_outpath, cam_names)
 
-            for cam_name, cam_video in zip(cam_names, cam_videos): 
-                
-                cam_outpath = os.path.join(trial_path, 'img', cam_name)
-                video_info = io.deserialize_video(
-                    cam_video, 
-                    cam_outpath, 
-                    start_frame = 0, 
-                    debug_ix = self.debug_ix)
-
-                cam_height_dict[cam_name] = video_info['camera_height']
-                cam_width_dict[cam_name] = video_info['camera_width']
-                n_frames.append(video_info['num_frames'])
-
-            cam_dict['camera_heights'] = cam_height_dict
-            cam_dict['camera_widths'] = cam_width_dict
-            cam_dict['num_frames'] = min(n_frames)
-            cam_dict['num_cameras'] = len(cam_names)
+            cam_dict = {
+                'intrinsic_matrices': intrinsics, 
+                'extrinsic_matrices': extrinsics, 
+                'distortion_matrices': distortions,
+                'num_cameras': len(intrinsics)
+            }
+            cam_dict.update(video_info) # height, width, n_frames, fps
 
             # save camera metadata
             io.save_yaml(data = cam_dict, outpath = trial_path, 
                          fname = 'metadata.yaml')
+            
+
+    def _process_subject_train(self, cam_videos, trial_outpath, cam_names):
+
+        # deserialize the camera videos and save as images 
+        cam_height_dict = {}
+        cam_width_dict = {}
+        num_frames = []
+        fps = []
+
+        for cam_name, cam_video in zip(cam_names, cam_videos): 
+            
+            cam_outpath = os.path.join(trial_outpath, 'img', cam_name)
+            video_info = io.deserialize_video(
+                cam_video, 
+                cam_outpath, 
+                start_frame = 0, 
+                debug_ix = self.debug_ix)
+
+            cam_height_dict[cam_name] = video_info['camera_height']
+            cam_width_dict[cam_name] = video_info['camera_width']
+            num_frames.append(video_info['num_frames'])
+            fps.append(video_info['fps'])
+
+        video_info = {
+            'cam_height_dict': cam_height_dict, 
+            'cam_width_dict': cam_width_dict, 
+            'num_frames': min(num_frames),
+            'fps': min(fps)
+        }
+
+        return video_info
+    
+    def _process_subject_test(self, cam_videos, trial_outpath, cam_names): 
+
+        cam_height_dict = {}
+        cam_width_dict = {}
+        num_frames = []
+        fps = []
+
+        outpath = os.path.join(trial_outpath, 'vid')
+        os.makedirs(outpath, exist_ok = True)
+
+        for cam_name, cam_video in zip(cam_names, cam_videos): 
+
+            # extract info from the video     
+            video_info = io.get_video_info(cam_video)
+            cam_height_dict[cam_name] = video_info['camera_height']
+            cam_width_dict[cam_name] = video_info['camera_width']
+            num_frames.append(video_info['num_frames'])
+            fps.append(video_info['fps'])
+
+            # copy video to desired location
+            cam_video_outpath = os.path.join(outpath, f'{cam_name}.mp4')
+            shutil.copy2(cam_video, cam_video_outpath)
+
+        video_info = {
+            'cam_height_dict': cam_height_dict, 
+            'cam_width_dict': cam_width_dict, 
+            'num_frames': min(num_frames),
+            'fps': min(fps)
+        }
+
+        return video_info

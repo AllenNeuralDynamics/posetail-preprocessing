@@ -204,7 +204,7 @@ class Rat7MDataset(BaseDataset):
     def generate_dataset(self, splits = None):
 
         # determine which dataset splits to generate
-        valid_splits = {'train', 'val', 'test'}
+        valid_splits = np.unique(self.metadata['split'])
 
         if splits is not None: 
             splits = set(splits)
@@ -218,11 +218,13 @@ class Rat7MDataset(BaseDataset):
 
         for split in splits: 
 
-            prefix = os.path.join(self.dataset_outpath, split, self.dataset_name)
+            prefix = os.path.join(self.dataset_outpath, split)
             os.makedirs(prefix, exist_ok = True)
             sessions = io.get_dirs(video_path)
 
-            for session in sessions: 
+            for i, session in enumerate(sessions):
+
+                print(i) 
 
                 session_path = os.path.join(video_path, session)
                 outpath = os.path.join(prefix, session)
@@ -309,7 +311,6 @@ class Rat7MDataset(BaseDataset):
 
         # select subset of metadata associated with the split 
         metadata = self.metadata[self.metadata['split'] == split]
-        print(metadata)
 
         # load calibration data
         calib_path = os.path.join(calib_path, f'mocap-{session}.mat')
@@ -374,10 +375,9 @@ class Rat7MDataset(BaseDataset):
                 'intrinsic_matrices': intrinsics, 
                 'extrinsic_matrices': extrinsics, 
                 'distortion_matrices': distortions,
-                'camera_heights': video_info['cam_height_dict'],
-                'camera_widths': video_info['cam_width_dict'],
-                'num_frames': min(video_info['n_frames']), 
-                'num_cameras': len(intrinsics)}
+                'num_cameras': len(intrinsics)
+            }
+            calib_dict.update(video_info)
 
             # save camera metadata
             io.save_yaml(data = calib_dict, outpath = trial_outpath, 
@@ -392,7 +392,8 @@ class Rat7MDataset(BaseDataset):
         cam_names = list(sync_dict.keys())
         cam_height_dict = {}
         cam_width_dict = {}
-        n_frames = []
+        num_frames = []
+        fps = []
 
         for cam_name in cam_names: 
 
@@ -418,12 +419,14 @@ class Rat7MDataset(BaseDataset):
             
                 cam_height_dict[cam_name] = video_info['camera_height']
                 cam_width_dict[cam_name] = video_info['camera_width']
-                n_frames.append(video_info['num_frames'])
+                num_frames.append(video_info['num_frames'])
+                fps.append(video_info['fps'])
 
         video_info = {
             'cam_height_dict': cam_height_dict, 
             'cam_width_dict': cam_width_dict, 
-            'n_frames': n_frames,
+            'num_frames': min(num_frames),
+            'fps': min(fps)
         }
 
         return video_info
@@ -440,7 +443,8 @@ class Rat7MDataset(BaseDataset):
         cam_names = list(sync_dict.keys())
         cam_height_dict = {}
         cam_width_dict = {}
-        n_frames = []
+        num_frames = []
+        fps = []
 
         for cam_name in cam_names: 
 
@@ -451,23 +455,13 @@ class Rat7MDataset(BaseDataset):
             video_ix = cam_frames[0] // chunk_size
             cam_start_frame = start_frames[video_ix]
             cam_video_path = os.path.join(session_path, f'{session}-{cam_name}-{cam_start_frame}.mp4')
-            cap = cv2.VideoCapture(cam_video_path)
-
-            height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-            width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-            num_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-            fps = int(cap.get(cv2.CAP_PROP_FPS))
-            
-            video_info = {
-                'camera_height': height,
-                'camera_width': width,
-                'num_frames': num_frames
-            }
+            video_info = io.get_video_info(cam_video_path)
 
             # generate a new synced video 
             fourcc = cv2.VideoWriter_fourcc(*'mp4v')
             cam_video_outpath = os.path.join(video_outpath, f'{cam_name}.mp4')
-            writer = cv2.VideoWriter(cam_video_outpath, fourcc, fps, (width, height))
+            writer = cv2.VideoWriter(cam_video_outpath, fourcc, video_info['fps'], 
+                                    (video_info['camera_width'], video_info['camera_height']))
 
             for i, frame in enumerate(cam_frames): 
 
@@ -488,12 +482,14 @@ class Rat7MDataset(BaseDataset):
             writer.release()
             cam_height_dict[cam_name] = video_info['camera_height']
             cam_width_dict[cam_name] = video_info['camera_width']
-            n_frames.append(video_info['num_frames'])
+            num_frames.append(video_info['num_frames'])
+            fps.append(video_info['fps'])
 
         video_info = {
             'cam_height_dict': cam_height_dict, 
             'cam_width_dict': cam_width_dict, 
-            'n_frames': n_frames,
+            'num_frames': num_frames,
+            'fps': fps
         }
 
         return video_info

@@ -2,6 +2,7 @@ import glob
 import os 
 import pickle
 import cv2
+import shutil
 
 import numpy as np
 import pandas as pd 
@@ -36,8 +37,8 @@ class POPDataset(BaseDataset):
 
         for intrinsics_path, extrinsics_path in zip(intrinsics_paths, extrinsics_paths):
 
-            cam_name = intrinsics_path.split('-')[1]
-            extrinsics_cam_name = extrinsics_path.split('-')[1]
+            cam_name = os.path.basename(intrinsics_path).split('-')[1]
+            extrinsics_cam_name = os.path.basename(extrinsics_path).split('-')[1]
 
             assert cam_name == extrinsics_cam_name
 
@@ -72,7 +73,7 @@ class POPDataset(BaseDataset):
 
         for id in ids:
 
-            subject_df = df[df.columns[df.columns.str.startswith(id)]]
+            subject_df = df[df.columns[df.columns.str.startswith(f'{id}_')]]
             coords = subject_df.values
             n_frames, _ = coords.shape
 
@@ -91,6 +92,9 @@ class POPDataset(BaseDataset):
         rows = []
 
         for subject_count in subject_counts:
+            
+            if subject_count in {'Markerless', 'N6000', 'SinglePigeon'}:
+                continue
 
             subject_path = os.path.join(self.dataset_path, subject_count)
             sessions = io.get_dirs(subject_path)
@@ -109,29 +113,45 @@ class POPDataset(BaseDataset):
 
         return df
 
-    def select_train_set(self):
-        pass 
+    def select_splits(self):
+        # splits were already processed in self._get_splits
+        return self.metadata
 
-    def select_test_set(self):  
-        pass 
+    def generate_dataset(self, splits = None):
 
-    def generate_dataset(self): 
+        # determine which dataset splits to generate
+        valid_splits = np.unique(self.metadata['split'])
 
-        os.makedirs(self.dataset_outpath, exist_ok = True)
-        subject_counts = io.get_dirs(self.dataset_path)
+        if splits is not None: 
+            splits = set(splits)
+            assert splits.issubset(valid_splits) 
+        else: 
+            splits = valid_splits 
 
-        for subject_count in subject_counts:
+        for split in splits: 
 
-            subject_path = os.path.join(self.dataset_path, subject_count)
-            sessions = io.get_dirs(subject_path)
+            subject_counts = io.get_dirs(self.dataset_path)
 
-            for session in sessions:  
+            for subject_count in subject_counts:
 
-                session_path = os.path.join(subject_path, session)
-                outpath = self.dataset_outpath
-                os.makedirs(outpath, exist_ok = True)
-                self._process_session(session_path, outpath, session,
-                                metadata = self.metadata, debug_ix = self.debug_ix)
+                if subject_count in {'Markerless', 'N6000', 'SinglePigeon'}:
+                    continue
+
+                subject_path = os.path.join(self.dataset_path, subject_count)
+                sessions = io.get_dirs(subject_path)
+
+                for session in sessions:  
+
+                    session_path = os.path.join(subject_path, session)
+                    outpath = os.path.join(self.dataset_outpath, split, subject_count, session)
+                    os.makedirs(outpath, exist_ok = True)
+                    self._process_session(session_path, outpath, session,
+                                          metadata = self.metadata, 
+                                          split = split)
+                    
+                    # clean up any empty directories
+                    if len(os.listdir(outpath)) == 0:
+                        os.rmdir(outpath)
 
     def get_metadata(self):
         return self.metadata
@@ -152,7 +172,7 @@ class POPDataset(BaseDataset):
 
         for split in splits: 
 
-            split_path = os.path.join(session_path, 'TrainingSplit', split)
+            split_path = os.path.join(session_path, 'TrainingSplit', split.capitalize())
             video_paths = sorted(glob.glob(os.path.join(split_path, '*.mp4')))
 
             cap = cv2.VideoCapture(video_paths[0])
@@ -168,15 +188,18 @@ class POPDataset(BaseDataset):
                     'n_cameras': n_cams, 
                     'n_frames': n_frames,
                     'total_frames': n_frames * n_cams,
-                    'split': split,
+                    'split': split.lower(),
                     'include': True}
         
             rows.append(metadata_dict)
 
         return rows
 
-    def _process_session(self, session_path, outpath, session,
-                            metadata = None, debug_ix = None): 
+    def _process_session(self, session_path, trial_outpath, session,
+                            metadata = None, split = None): 
+
+        # select subset of metadata associated with the split 
+        metadata = self.metadata[self.metadata['split'] == split]
 
         # load calibration data
         calib_path = os.path.join(session_path, 'CalibrationInfo')
@@ -184,65 +207,121 @@ class POPDataset(BaseDataset):
         cam_names = list(intrinsics.keys())
 
         # get splits 
-        splits = io.get_dirs(os.path.join(session_path, 'TrainingSplit'))
+        split_path = os.path.join(session_path, 'TrainingSplit', split.capitalize())
 
-        for split in splits: 
+        # check if the 3d annotations exist 
+        data_path = glob.glob(os.path.join(split_path, '*Keypoint3D.csv'))[0]
+        if not os.path.isfile(data_path): 
+            # print(f'skipping... could not find {data_path}')
+            return
+    
+        # load and format the 3d annotations
+        pose_dict = self.load_pose3d(data_path)
 
-            split_path = os.path.join(session_path, 'TrainingSplit', split)
-            video_paths = sorted(glob.glob(os.path.join(split_path, '*.mp4')))
+        # reconstruct the id
+        id = f'{session}_{split.capitalize()}'
 
-            # check if the 3d annotations exist 
-            data_path = glob.glob(os.path.join(split_path, '*Keypoint3D.csv'))[0]
-            if not os.path.isfile(data_path): 
-                print(f'skipping... could not find {data_path}')
-                return
-        
-            # load and format the 3d annotations
-            pose_dict = self.load_pose3d(data_path)
+        # skip video if metadata excludes it 
+        process = True
+        df = metadata[metadata['id'] == id]
+        if df.empty or not df['include'].values[0]: 
+            # print('skipping...')
+            process = False
 
-            # reconstruct the id
-            id = f'{session}_{split}'
-            trial_outpath = os.path.join(outpath, id)
-
-            # skip video if metadata excludes it 
-            if metadata is not None: 
-                df = metadata[metadata['id'] == id]
-                if not df['include'].values[0]: 
-                    # print('skipping...')
-                    continue
+        if process: 
 
             io.save_npz(pose_dict, trial_outpath, fname = 'pose3d')
 
-            # deserialize the camera videos and save as images 
-            cam_height_dict = {}
-            cam_width_dict = {}
-            n_frames = []
-
-            for cam_name in cam_names: 
-
-                cam_video_path = os.path.join(split_path, f'{session}-{cam_name}.mp4')
-                cam_outpath = os.path.join(trial_outpath, 'img', cam_name)
-
-                video_info = io.deserialize_video(
-                    cam_video_path, 
-                    cam_outpath, 
-                    start_frame = 0, 
-                    debug_ix = debug_ix)
-
-                cam_height_dict[cam_name] = video_info['camera_height']
-                cam_width_dict[cam_name] = video_info['camera_width']
-                n_frames.append(video_info['num_frames'])
+            # put videos/frames in the desired format
+            if split == 'test':  
+                # for test set, save as videos
+                video_info = self._process_session_test(
+                    split_path, trial_outpath, session, cam_names)
+            else:
+                # for train and validation sets, deserialize the camera videos 
+                # and save as images  
+                video_info = self._process_session_train(
+                    split_path, trial_outpath, session, cam_names)
 
             calib_dict = {
                 'intrinsic_matrices': intrinsics, 
                 'extrinsic_matrices': extrinsics, 
                 'distortion_matrices': distortions,
-                'camera_heights': cam_height_dict,
-                'camera_widths': cam_width_dict,
-                'num_frames': min(n_frames), 
                 'num_cameras': len(intrinsics)}
+            calib_dict.update(video_info)
 
             # save camera metadata
             io.save_yaml(data = calib_dict, outpath = trial_outpath, 
                     fname = 'metadata.yaml')
 
+
+    def _process_session_train(self, split_path, trial_outpath, 
+                               session, cam_names): 
+
+        # deserialize the camera videos and save as images 
+        cam_height_dict = {}
+        cam_width_dict = {}
+        num_frames = []
+        fps = []
+
+        for cam_name in cam_names: 
+
+            cam_video_path = os.path.join(split_path, f'{session}-{cam_name}.mp4')
+            cam_outpath = os.path.join(trial_outpath, 'img', cam_name)
+
+            video_info = io.deserialize_video(
+                cam_video_path, 
+                cam_outpath, 
+                start_frame = 0, 
+                debug_ix = self.debug_ix)
+
+            cam_height_dict[cam_name] = video_info['camera_height']
+            cam_width_dict[cam_name] = video_info['camera_width']
+            num_frames.append(video_info['num_frames'])
+            fps.append(video_info['fps'])
+
+        video_info = {
+            'cam_height_dict': cam_height_dict, 
+            'cam_width_dict': cam_width_dict, 
+            'num_frames': min(num_frames),
+            'fps': min(fps)
+        }
+
+        return video_info 
+    
+
+    def _process_session_test(self, split_path, trial_outpath, 
+                               session, cam_names): 
+
+        # deserialize the camera videos and save as images 
+        cam_height_dict = {}
+        cam_width_dict = {}
+        num_frames = []
+        fps = []
+
+        outpath = os.path.join(trial_outpath, 'vid')
+        os.makedirs(outpath, exist_ok = True)
+
+        for cam_name in cam_names: 
+
+            cam_video_path = os.path.join(split_path, f'{session}-{cam_name}.mp4')
+            cam_video_outpath = os.path.join(outpath, f'{cam_name}.mp4')
+
+            # extract info from the video     
+            video_info = io.get_video_info(cam_video_path)
+            cam_height_dict[cam_name] = video_info['camera_height']
+            cam_width_dict[cam_name] = video_info['camera_width']
+            num_frames.append(video_info['num_frames'])
+            fps.append(video_info['fps'])
+
+            # copy video to desired location
+            shutil.copy2(cam_video_path, cam_video_outpath)
+
+        video_info = {
+            'cam_height_dict': cam_height_dict, 
+            'cam_width_dict': cam_width_dict, 
+            'num_frames': min(num_frames),
+            'fps': min(fps)
+        }
+
+        return video_info 

@@ -14,14 +14,12 @@ from posetail_preprocessing.utils import io, disassemble_extrinsics
 class KubricMultiviewDataset(BaseDataset): 
 
     def __init__(self, dataset_path, dataset_outpath, 
-                 dataset_name = 'kubric_multiview', 
-                 debug_ix = None):
+                 dataset_name = 'kubric_multiview'):
         
         super().__init__(dataset_path, dataset_outpath)
 
         self.dataset_name = dataset_name
         self.metadata = None
-        self.debug_ix = debug_ix
 
 
     def load_calibration(self, calib_path):
@@ -76,11 +74,19 @@ class KubricMultiviewDataset(BaseDataset):
         rows = []
         splits = io.get_dirs(self.dataset_path)
 
-        for split in splits: # only test available
+        for split in splits:
 
             sessions = io.get_dirs(os.path.join(self.dataset_path, split))
 
-            for session in sessions: 
+            for i, session in enumerate(sessions): 
+
+                print(f'{i}/{len(sessions)}')
+
+                # make sure data has been generated for this session
+                cams = io.get_dirs(os.path.join(self.dataset_path, split, session))
+                if len(cams) == 0: 
+                    continue
+
                 session_path = os.path.join(self.dataset_path, split, session)
                 metadata_rows = self._get_session(session_path, session, split)
                 rows.extend(metadata_rows)
@@ -93,9 +99,17 @@ class KubricMultiviewDataset(BaseDataset):
 
         return df
 
+    def select_splits(self):  
+        # TODO 
+        # mostly handled in self._get_session(), subsample here as necessary
+        return self.metadata 
 
     def select_train_set(self, n_train_videos = 25, seed = 3):
-        '''
+        '''     
+        NOTE: this is for testing the network on a small, specific 
+        subset of the data and will likely be deprecated
+        at some point
+
         randomly samples n videos to be curated as the training
         set. the remaining samples become validation.
         '''
@@ -115,32 +129,33 @@ class KubricMultiviewDataset(BaseDataset):
 
         return self.metadata
 
+    def generate_dataset(self, splits = None): 
 
-    def select_test_set(self):  
-        # TODO
-        pass 
+        # determine which dataset splits to generate
+        valid_splits = np.unique(self.metadata['split'])
 
+        if splits is not None: 
+            splits = set(splits)
+            assert splits.issubset(valid_splits) 
+        else: 
+            splits = valid_splits
 
-    def generate_dataset(self, split = None): 
+        for split in splits: 
 
-        metadata_subset = None 
-        if split is not None:
-            assert split in {'train', 'val', 'test'} 
-            metadata_subset = self.metadata[self.metadata['split'] == split]
+            sessions = io.get_dirs(os.path.join(self.dataset_path, split))
 
-        os.makedirs(self.dataset_outpath, exist_ok = True)
-        trials = io.get_dirs(self.dataset_path)
+            for i, session in enumerate(sessions): 
 
-        for trial in trials: 
+                # make sure data has been generated for this session
+                cams = io.get_dirs(os.path.join(self.dataset_path, split, session))
+                if len(cams) == 0: 
+                    continue
 
-            sessions = io.get_dirs(os.path.join(self.dataset_path, trial))
-
-            for session in sessions: 
-
-                session_path = os.path.join(self.dataset_path, trial, session)
-                outpath = os.path.join(self.dataset_outpath, trial, session)
+                session_path = os.path.join(self.dataset_path, split, session)
+                outpath = os.path.join(self.dataset_outpath, split, session)
+                trial_outpath = os.path.join(outpath, 'trial')
                 os.makedirs(outpath, exist_ok = True)
-                self._process_session(session_path, outpath, session, metadata = metadata_subset)
+                self._process_session(session_path, trial_outpath, session, split)
 
                 # clean up any empty directories
                 if len(os.listdir(outpath)) == 0:
@@ -151,6 +166,8 @@ class KubricMultiviewDataset(BaseDataset):
     def get_metadata(self):
         return self.metadata 
     
+    def set_metadata(self, df): 
+        self.metadata = df 
 
     def _get_session(self, session_path, session, split):
 
@@ -161,8 +178,7 @@ class KubricMultiviewDataset(BaseDataset):
         img_path = os.path.join(session_path, cam_names[0], 'rgba*.png')
         n_frames = len(glob.glob(img_path))
 
-        rows = [{
-                'id': f'{session}',
+        rows = [{'id': f'{session}',
                 'session': session, 
                 'subject': session, 
                 'trial': 1,
@@ -175,21 +191,22 @@ class KubricMultiviewDataset(BaseDataset):
         return rows
 
 
-    def _process_session(self, session_path, outpath, session, metadata = None): 
+    def _process_session(self, session_path, outpath, session, split): 
 
-        # specify conditions to process the session
-        process = True
+        # select the metadata for the given split
+        metadata = self.metadata[self.metadata['split'] == split]
 
         # load calibration data
         intrinsics, extrinsics, distortions, widths, heights = self.load_calibration(session_path)
         cam_names = list(intrinsics.keys())
 
+        # specify conditions to process the session and 
         # skip if metadata excludes it 
-        if metadata is not None: 
-            df = metadata[metadata['id'] == session]
-            if df.empty or not df['include'].values[0]:
-                print('skipping', session) 
-                process = False
+        process = True
+        df = metadata[metadata['id'] == session]
+        if df.empty or not df['include'].values[0]:
+            print('skipping', session) 
+            process = False
 
         if process:
             

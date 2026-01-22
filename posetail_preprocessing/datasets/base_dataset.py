@@ -19,11 +19,7 @@ class BaseDataset(ABC):
         pass
 
     @abstractmethod
-    def select_train_set(self):
-        pass 
-
-    @abstractmethod
-    def select_test_set(self):  
+    def select_splits(self):
         pass 
 
     @abstractmethod
@@ -33,3 +29,7 @@ class BaseDataset(ABC):
     @abstractmethod
     def get_metadata(self):
         pass 
+
+    @abstractmethod
+    def set_metadata(self): 
+        pass

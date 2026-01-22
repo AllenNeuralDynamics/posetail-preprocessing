@@ -1,0 +1,22 @@
+# 3dpose is consistent with coco19, different order than openpose: 
+# https://github.com/CMU-Perceptual-Computing-Lab/panoptic-toolbox/blob/master/README.md
+keypoints:
+  - Neck
+  - Nose
+  - BodyCenter
+  - lShoulder
+  - lElbow
+  - lWrist
+  - lHip
+  - lKnee
+  - lAnkle
+  - rShoulder
+  - rElbow
+  - rWrist
+  - rHip
+  - rKnee
+  - rAnkle
+  - rEye
+  - lEye
+  - rEar
+  - lEar

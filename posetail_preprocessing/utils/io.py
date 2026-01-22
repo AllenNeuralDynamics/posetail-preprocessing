@@ -81,6 +81,20 @@ def write_keypoints_toml(keypoints, outdir, default_name = 'keypoints'):
         toml.dump(keypoints_dict, f)
 
 
+def get_video_info(video_path):
+
+    cap = cv2.VideoCapture(video_path)
+
+    video_info = {
+        'camera_height': int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)),
+        'camera_width': int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
+        'num_frames': int(cap.get(cv2.CAP_PROP_FRAME_COUNT)),
+        'fps': int(cap.get(cv2.CAP_PROP_FPS))
+    }
+
+    return video_info
+
+
 def deserialize_video(video_path, outpath, start_frame = 0, debug_ix = None, zfill = 6):
 
     os.makedirs(outpath, exist_ok = True)
@@ -89,7 +103,9 @@ def deserialize_video(video_path, outpath, start_frame = 0, debug_ix = None, zfi
     video_info = {
         'camera_height': int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)),
         'camera_width': int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
-        'num_frames': int(cap.get(cv2.CAP_PROP_FRAME_COUNT))}
+        'num_frames': int(cap.get(cv2.CAP_PROP_FRAME_COUNT)),
+        'fps': int(cap.get(cv2.CAP_PROP_FPS))
+    }
 
     frame_ix = start_frame
 
@@ -124,7 +140,9 @@ def save_frame_synced(video_path, outpath, frame_ix,
     video_info = {
         'camera_height': int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)),
         'camera_width': int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
-        'num_frames': int(cap.get(cv2.CAP_PROP_FRAME_COUNT))}
+        'num_frames': int(cap.get(cv2.CAP_PROP_FRAME_COUNT)), 
+        'fps': int(cap.get(cv2.CAP_PROP_FPS))
+    }
 
     cap.set(cv2.CAP_PROP_POS_FRAMES, frame_ix)
     _, frame = cap.read()
@@ -151,3 +169,4 @@ def get_frame_synced(video_path, frame_ix,
     cap.release()
 
     return frame
+
