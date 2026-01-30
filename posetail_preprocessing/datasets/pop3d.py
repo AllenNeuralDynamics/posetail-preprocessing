@@ -13,14 +13,11 @@ from posetail_preprocessing.utils import io, assemble_extrinsics
 
 class POPDataset(BaseDataset): 
 
-    def __init__(self, dataset_path, dataset_outpath, dataset_name = '3dpop', 
-                 debug_ix = None):
+    def __init__(self, dataset_path, dataset_outpath, dataset_name = '3dpop'):
         super().__init__(dataset_path, dataset_outpath)
 
         self.dataset_path = dataset_path
         self.dataset_name = dataset_name
-        self.metadata = None
-        self.debug_ix = debug_ix
     
 
     def load_calibration(self, calib_path):
@@ -113,14 +110,23 @@ class POPDataset(BaseDataset):
 
         return df
 
-    def select_splits(self):
-        # splits were already processed in self._get_splits
+
+    def select_splits(self, split_dict = None, split_frames_dict = None, 
+                      random_state = 3):
+        
+        self.split_frames_dict = split_frames_dict
+
+        # splits were mostly processed in self._get_splits
+        if split_dict: 
+            for split, n in split_dict.items():
+                self._select_subset_for_split(split = split, n = n, random_state = random_state)
+
         return self.metadata
 
     def generate_dataset(self, splits = None):
 
         # determine which dataset splits to generate
-        valid_splits = np.unique(self.metadata['split'])
+        valid_splits = pd.unique(self.metadata['split'])
 
         if splits is not None: 
             splits = set(splits)
@@ -153,11 +159,6 @@ class POPDataset(BaseDataset):
                     if len(os.listdir(outpath)) == 0:
                         os.rmdir(outpath)
 
-    def get_metadata(self):
-        return self.metadata
-    
-    def set_metadata(self, df): 
-        self.metadata = df 
 
     def _get_splits(self, session_path, session): 
 
@@ -198,6 +199,11 @@ class POPDataset(BaseDataset):
     def _process_session(self, session_path, trial_outpath, session,
                             metadata = None, split = None): 
 
+        # number of images to generate from each video
+        split_frames = None
+        if self.split_frames_dict and split in self.split_frames_dict: 
+            split_frames = self.split_frames_dict[split]
+
         # select subset of metadata associated with the split 
         metadata = self.metadata[self.metadata['split'] == split]
 
@@ -217,6 +223,7 @@ class POPDataset(BaseDataset):
     
         # load and format the 3d annotations
         pose_dict = self.load_pose3d(data_path)
+        pose_dict = self._subset_pose_dict(data_path, n_frames = split_frames)
 
         # reconstruct the id
         id = f'{session}_{split.capitalize()}'
@@ -256,7 +263,7 @@ class POPDataset(BaseDataset):
 
 
     def _process_session_train(self, split_path, trial_outpath, 
-                               session, cam_names): 
+                               session, cam_names, split_frames = None): 
 
         # deserialize the camera videos and save as images 
         cam_height_dict = {}
@@ -273,7 +280,7 @@ class POPDataset(BaseDataset):
                 cam_video_path, 
                 cam_outpath, 
                 start_frame = 0, 
-                debug_ix = self.debug_ix)
+                debug_ix = split_frames)
 
             cam_height_dict[cam_name] = video_info['camera_heights']
             cam_width_dict[cam_name] = video_info['camera_widths']
@@ -315,7 +322,7 @@ class POPDataset(BaseDataset):
             fps.append(video_info['fps'])
 
             # copy video to desired location
-            shutil.copy2(cam_video_path, cam_video_outpath)
+            os.symlink(cam_video_path, cam_video_outpath)
 
         video_info = {
             'cam_heights': cam_height_dict, 

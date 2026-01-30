@@ -16,13 +16,10 @@ from posetail_preprocessing.utils import io
 class DexYCBDataset(BaseDataset): 
 
     def __init__(self, dataset_path, dataset_outpath, 
-                 dataset_name = 'dex_ycb', debug_ix = None):
+                 dataset_name = 'dex_ycb'):
         super().__init__(dataset_path, dataset_outpath)
 
         self.dataset_name = dataset_name
-        self.metadata = None
-        self.debug_ix = debug_ix
-
 
     def load_calibration(self, calib_path):
 
@@ -89,19 +86,26 @@ class DexYCBDataset(BaseDataset):
 
         return df
 
-    def select_splits(self):
-        '''
-        we are using this dataset for testing only
-        '''
+    def select_splits(self, split_dict = None, split_frames_dict = None, 
+                      random_state = 3):
+        
+        # NOTE: train/test splits were mostly curated in self._get_session
+        self.split_frames_dict = split_frames_dict 
+
         self.metadata['split'] = 'test'
         self.metadata['include'] = True
-        
-        return self.metadata
 
+        if split_dict: 
+            for split, n in split_dict.items():
+                self._select_subset_for_split(split = split, n = n, random_state = random_state)
+
+        return self.metadata 
+    
+        
     def generate_dataset(self, splits = None): 
         
         # determine which dataset splits to generate
-        valid_splits = np.unique(self.metadata['split'])
+        valid_splits = pd.unique(self.metadata['split'])
 
         if splits is not None: 
             splits = set(splits)
@@ -126,11 +130,6 @@ class DexYCBDataset(BaseDataset):
                     # print(f'removing: {outpath}')
                     os.rmdir(outpath)
 
-    def get_metadata(self):
-        return self.metadata 
-
-    def set_metadata(self, metadata): 
-        self.metadata = metadata
 
     def _get_sessions(self, session_path, session): 
 
@@ -162,6 +161,11 @@ class DexYCBDataset(BaseDataset):
     
     def _process_session(self, session_path, outpath, session, split): 
 
+        # number of images to generate from each video
+        split_frames = None
+        if self.split_frames_dict and split in self.split_frames_dict: 
+            split_frames = self.split_frames_dict[split]
+
         # select the metadata for the given split
         metadata = self.metadata[self.metadata['split'] == split]
 
@@ -183,6 +187,7 @@ class DexYCBDataset(BaseDataset):
             # load and format the 3d annotations
             data_path = os.path.join(session_path, 'tracks_3d.npz')
             pose_dict = self.load_pose3d(data_path)
+            pose_dict = self._subset_pose_dict(pose_dict, n_frames = split_frames)
             io.save_npz(pose_dict, outpath, fname = 'pose3d')
 
             # copy image folders to new outpath
@@ -198,11 +203,11 @@ class DexYCBDataset(BaseDataset):
 
                 for i, img in enumerate(img_paths):
 
-                    if i == self.debug_ix: 
+                    if split_frames and i == split_frames: 
                         break
                     
                     new_img_path = os.path.join(img_outpath, f'img{str(i).zfill(6)}.png')
-                    shutil.copy2(img, new_img_path) 
+                    os.symlink(img, new_img_path) 
 
             cam_dict = {
                 'intrinsic_matrices': intrinsics, 

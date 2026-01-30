@@ -17,7 +17,6 @@ class CMUPanopticGSDataset(BaseDataset):
         super().__init__(dataset_path, dataset_outpath)
 
         self.dataset_name = dataset_name
-        self.metadata = None
     
     def load_calibration(self, calib_path, n_dist_coeffs = 5):
 
@@ -78,18 +77,22 @@ class CMUPanopticGSDataset(BaseDataset):
 
         return df
 
-    def select_splits(self):
+    def select_splits(self, split_dict = None, split_frames_dict = None, 
+                      random_state = 3):
         
-        # NOTE: train/test splits have already been curated in 
-        # self._get_session. a validation set can be selected 
-        # here if desired
+        # NOTE: train/test splits were mostly curated in self._get_session
+        self.split_frames_dict = split_frames_dict 
+
+        if split_dict: 
+            for split, n in split_dict.items():
+                self._select_subset_for_split(split = split, n = n, random_state = random_state)
 
         return self.metadata 
 
     def generate_dataset(self, splits = None): 
 
         # determine which dataset splits to generate
-        valid_splits = np.unique(self.metadata['split'])
+        valid_splits = pd.unique(self.metadata['split'])
 
         if splits is not None: 
             splits = set(splits)
@@ -113,12 +116,6 @@ class CMUPanopticGSDataset(BaseDataset):
                     # print(f'removing: {outpath}')
                     os.rmdir(outpath)
 
-
-    def get_metadata(self):
-        return self.metadata
-    
-    def set_metadata(self, df): 
-        self.metadata = df 
 
     def _get_session(self, session_path, session): 
 
@@ -152,6 +149,11 @@ class CMUPanopticGSDataset(BaseDataset):
     
     def _process_session(self, outpath, session, split): 
 
+        # number of images to generate from each video
+        split_frames = None
+        if self.split_frames_dict and split in self.split_frames_dict: 
+            split_frames = self.split_frames_dict[split]
+
         # select the metadata for the given split
         metadata = self.metadata[self.metadata['split'] == split]
 
@@ -180,6 +182,7 @@ class CMUPanopticGSDataset(BaseDataset):
                 
                 # load and format the 3d annotations
                 pose_dict = self.load_pose3d(data_path)
+                pose_dict = self._subset_pose_dict(pose_dict, n_frames = split_frames)
                 io.save_npz(pose_dict, outpath, fname = 'pose3d')
 
                 # copy image folders to new outpath

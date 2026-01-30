@@ -14,14 +14,11 @@ from posetail_preprocessing.utils import io, assemble_extrinsics
 class CMUPanopticDataset(BaseDataset): 
 
     def __init__(self, dataset_path, dataset_outpath, keypoints_path,
-                 dataset_name = 'cmupanoptic', debug_ix = None):
+                 dataset_name = 'cmupanoptic'):
         super().__init__(dataset_path, dataset_outpath)
 
         self.dataset_name = dataset_name
-        self.keypoints_path = keypoints_path
-    
-        self.metadata = None
-        self.debug_ix = debug_ix
+        self.keypoints_path = keypoints_path    
     
     def load_calibration(self, calib_path):
 
@@ -130,20 +127,28 @@ class CMUPanopticDataset(BaseDataset):
 
         return df
 
-    def select_splits(self):
+
+    def select_splits(self, split_dict = None, split_frames_dict = None, 
+                      random_state = 3):
+
+        self.split_frames_dict = split_frames_dict
 
         session_splits = [{'160906_pizza1'},  {'170915_office1'}, {'170407_office2'}]
-        splits = ['val', 'test', pd.NA]
+        splits = ['val', 'test', None]
 
         for i, subjects in enumerate(session_splits):
             self.metadata.loc[self.metadata['subject'].isin(subjects), 'split'] = splits[i]
+
+        if split_dict: 
+            for split, n in split_dict.items():
+                self._select_subset_for_split(split = split, n = n, random_state = random_state)
 
         return self.metadata
 
     def generate_dataset(self, splits = None): 
 
         # determine which dataset splits to generate
-        valid_splits = np.unique(self.metadata['split'])
+        valid_splits = pd.unique(self.metadata['split'])
 
         if splits is not None: 
             splits = set(splits)
@@ -155,7 +160,7 @@ class CMUPanopticDataset(BaseDataset):
         for split in splits:
 
             # skips sessions we aren't using
-            if pd.isna(split): 
+            if split is None: 
                 continue 
 
             sessions = io.get_dirs(self.dataset_path)
@@ -170,13 +175,6 @@ class CMUPanopticDataset(BaseDataset):
                 if len(os.listdir(outpath)) == 0:
                     # print(f'removing: {outpath}')
                     os.rmdir(outpath)
-
-
-    def get_metadata(self):
-        return self.metadata
-    
-    def set_metadata(self, df): 
-        self.metadata = df 
 
 
     def _get_start_frame(self, data_path): 
@@ -341,6 +339,11 @@ class CMUPanopticDataset(BaseDataset):
 
     def _process_session(self, outpath, session, split): 
 
+        # number of images to generate from each video
+        split_frames = None
+        if self.split_frames_dict and split in self.split_frames_dict: 
+            split_frames = self.split_frames_dict[split]
+
         # select subset of metadata associated with the split 
         metadata = self.metadata[self.metadata['split'] == split]
 
@@ -361,6 +364,7 @@ class CMUPanopticDataset(BaseDataset):
         if process: 
             # load and format the 3d annotations
             pose_dict = self.load_pose3d(session_path)
+            pose_dict = self._subset_pose_dict(pose_dict, n_frames = split_frames)
             io.save_npz(pose_dict, outpath, fname = 'pose3d')
 
         # put videos/frames in the desired format
@@ -386,7 +390,8 @@ class CMUPanopticDataset(BaseDataset):
                 fname = 'metadata.yaml')
         
 
-    def _process_session_train(self, session_path, trial_outpath, cam_names):
+    def _process_session_train(self, session_path, trial_outpath, cam_names,
+                               split_frames = None):
 
         # copy image folders to new outpath
         cam_height_dict = {}
@@ -403,7 +408,7 @@ class CMUPanopticDataset(BaseDataset):
                 cam_video_path, 
                 cam_outpath, 
                 start_frame = 0, 
-                debug_ix = self.debug_ix)
+                debug_ix = split_frames)
 
         cam_height_dict[cam_name] = video_info['camera_heights']
         cam_width_dict[cam_name] = video_info['camera_widths']
@@ -443,7 +448,7 @@ class CMUPanopticDataset(BaseDataset):
             fps.append(video_info['fps'])
 
             # copy video to desired location
-            shutil.copy2(cam_video_path, cam_video_outpath)
+            os.symlink(cam_video_path, cam_video_outpath)
 
         video_info = {
             'cam_heights': cam_height_dict, 

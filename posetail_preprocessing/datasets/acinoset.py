@@ -7,19 +7,23 @@ import numpy as np
 import pandas as pd 
 
 from posetail_preprocessing.datasets import BaseDataset
-from posetail_preprocessing.utils import io, assemble_extrinsics
+from posetail_preprocessing.utils import io, assemble_extrinsics, filter_coords
 
 class AcinosetDataset(BaseDataset): 
 
     def __init__(self, dataset_path, dataset_outpath,
                  dataset_name = 'acinoset', keypoints_path = None, 
-                 debug_ix = None):
+                 filter_kernel_size = 11, filter_thresh = None, 
+                 filter_percentile = 90):
         super().__init__(dataset_path, dataset_outpath)
 
         self.dataset_name = dataset_name
         self.keypoints_path = keypoints_path
-        self.metadata = None
-        self.debug_ix = debug_ix
+
+        # parameters for filtering ground truth keypoints
+        self.kernel_size = filter_kernel_size
+        self.thresh = filter_thresh
+        self.percentile = filter_percentile
     
 
     def load_calibration(self, calib_path, cam_names = None):
@@ -82,6 +86,13 @@ class AcinosetDataset(BaseDataset):
         else:
             keypoints = [f'kpt{i}' for i in range(pose3d.shape[2])]
 
+        # filter out inaccurate keypoints 
+        pose3d = filter_coords(
+            coords = pose3d, 
+            kernel_size = self.kernel_size, 
+            thresh = self.thresh, 
+            percentile = self.percentile)
+
         # combine coords and keypoints 
         pose3d_dict = {'pose': pose3d, 'keypoints': keypoints}
     
@@ -132,7 +143,7 @@ class AcinosetDataset(BaseDataset):
     def generate_dataset(self, splits = None):
 
         # determine which dataset splits to generate
-        valid_splits = np.unique(self.metadata['split'])
+        valid_splits = pd.unique(self.metadata['split'])
 
         if splits is not None: 
             splits = set(splits)
@@ -188,7 +199,10 @@ class AcinosetDataset(BaseDataset):
                                 os.rmdir(outpath)
 
 
-    def select_splits(self):
+    def select_splits(self, split_dict = None, split_frames_dict = None, 
+                      random_state = 3):
+
+        self.split_frames_dict = split_frames_dict
 
         subject_splits = [{'phantom', 'zorro', 'jules', 'cetane', 'lily', 'kiara',  'menya'},  
                           {'ebony'},  {'romeo', 'big_girl'}]
@@ -197,15 +211,11 @@ class AcinosetDataset(BaseDataset):
         for i, subjects in enumerate(subject_splits):
             self.metadata.loc[self.metadata['subject'].isin(subjects), 'split'] = splits[i]
 
+        if split_dict: 
+            for split, n in split_dict.items():
+                self._select_subset_for_split(split = split, n = n, random_state = random_state)
+
         return self.metadata
-
-
-    def get_metadata(self):
-        return self.metadata
-    
-
-    def set_metadata(self, df): 
-        self.metadata = df 
 
 
     def _get_trials(self, subject_path, session, subject, orientation = ''): 
@@ -249,8 +259,14 @@ class AcinosetDataset(BaseDataset):
             rows.append(metadata_dict)
 
         return rows
-    
+
+
     def _process_subject(self, subject_path, calib_path, outpath, id, split): 
+
+        # number of images to generate from each video
+        split_frames = None
+        if self.split_frames_dict and split in self.split_frames_dict: 
+            split_frames = self.split_frames_dict[split]
 
         # select subset of metadata associated with the split 
         metadata = self.metadata[self.metadata['split'] == split]
@@ -300,6 +316,7 @@ class AcinosetDataset(BaseDataset):
             # load and format the 3d annotations
             trial_outpath = os.path.join(outpath, trial)
             pose_dict = self.load_pose3d(data_path)
+            pose_dict = self._subset_pose_dict(pose_dict, n_frames = split_frames)
             io.save_npz(pose_dict, trial_outpath, fname = 'pose3d')
 
             if split == 'test':  
@@ -310,7 +327,8 @@ class AcinosetDataset(BaseDataset):
                 # for train and validation sets, deserialize the camera videos 
                 # and save as images  
                 video_info = self._process_subject_train(
-                    cam_videos, trial_outpath, cam_names)
+                    cam_videos, trial_outpath, cam_names, 
+                    split_frames = split_frames)
 
             cam_dict = {
                 'intrinsic_matrices': intrinsics, 
@@ -325,7 +343,8 @@ class AcinosetDataset(BaseDataset):
                          fname = 'metadata.yaml')
             
 
-    def _process_subject_train(self, cam_videos, trial_outpath, cam_names):
+    def _process_subject_train(self, cam_videos, trial_outpath, cam_names, 
+                               split_frames = None):
 
         # deserialize the camera videos and save as images 
         cam_height_dict = {}
@@ -340,7 +359,7 @@ class AcinosetDataset(BaseDataset):
                 cam_video, 
                 cam_outpath, 
                 start_frame = 0, 
-                debug_ix = self.debug_ix)
+                debug_ix = split_frames)
 
             cam_height_dict[cam_name] = video_info['camera_heights']
             cam_width_dict[cam_name] = video_info['camera_widths']
@@ -377,7 +396,7 @@ class AcinosetDataset(BaseDataset):
 
             # copy video to desired location
             cam_video_outpath = os.path.join(outpath, f'{cam_name}.mp4')
-            shutil.copy2(cam_video, cam_video_outpath)
+            os.symlink(cam_video, cam_video_outpath)
 
         video_info = {
             'cam_heights': cam_height_dict, 

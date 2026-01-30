@@ -120,7 +120,7 @@ def deserialize_video(video_path, outpath, start_frame = 0, debug_ix = None, zfi
         cv2.imwrite(out_path, frame)
         frame_ix += 1
 
-        if debug_ix is not None and frame_ix - start_frame == debug_ix: 
+        if debug_ix and frame_ix - start_frame == debug_ix: 
             break
 
     cap.release()

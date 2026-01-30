@@ -9,20 +9,17 @@ import pandas as pd
 from collections import defaultdict
 
 from posetail_preprocessing.datasets import BaseDataset
-from posetail_preprocessing.utils import io, assemble_extrinsics
+from posetail_preprocessing.utils import io, assemble_extrinsics, filter_coords
 
 
 class Rat7MDataset(BaseDataset): 
 
     def __init__(self, dataset_path, dataset_outpath, 
-                 dataset_name = 'rat7m', debug_ix = None, 
-                 filter_kernel_size = 11, filter_thresh = None, 
-                 filter_percentile = 90):
+                 dataset_name = 'rat7m', filter_kernel_size = 11, 
+                 filter_thresh = None, filter_percentile = 90):
         super().__init__(dataset_path, dataset_outpath)
 
         self.dataset_name = dataset_name
-        self.metadata = None
-        self.debug_ix = debug_ix
 
         # parameters for filtering ground truth keypoints
         self.kernel_size = filter_kernel_size
@@ -84,7 +81,7 @@ class Rat7MDataset(BaseDataset):
         pose3d = np.expand_dims(coords.swapaxes(0, 1), axis = 0) # (n_subjects, time, bodyparts, 3)
 
         # filter out inaccurate keypoints 
-        pose3d = self._filter_coords(
+        pose3d = filter_coords(
             coords = pose3d, 
             kernel_size = self.kernel_size, 
             thresh = self.thresh, 
@@ -116,15 +113,24 @@ class Rat7MDataset(BaseDataset):
 
         return df
     
-    def select_splits(self):
+    
+    def select_splits(self, split_dict = None, split_frames_dict = None, 
+                      random_state = 3):
+        
+        self.split_frames_dict = split_frames_dict
         
         subject_splits = [{'s1', 's2', 's3'},  {'s4'},  {'s5'}]
         splits = ['train', 'val', 'test']
 
         for i, subjects in enumerate(subject_splits):
             self.metadata.loc[self.metadata['subject'].isin(subjects), 'split'] = splits[i]
+        
+        if split_dict: 
+            for split, n in split_dict.items():
+                self._select_subset_for_split(split = split, n = n, random_state = random_state)
 
         return self.metadata
+    
 
     def select_train_set(self, n_train_videos = 10, seed = 3):
         ''' 
@@ -195,16 +201,11 @@ class Rat7MDataset(BaseDataset):
 
         return self.metadata
 
-    def get_metadata(self):
-        return self.metadata
-    
-    def set_metadata(self, df): 
-        self.metadata = df 
 
     def generate_dataset(self, splits = None):
 
         # determine which dataset splits to generate
-        valid_splits = np.unique(self.metadata['split'])
+        valid_splits = pd.unique(self.metadata['split'])
 
         if splits is not None: 
             splits = set(splits)
@@ -224,8 +225,6 @@ class Rat7MDataset(BaseDataset):
 
             for i, session in enumerate(sessions):
 
-                print(i) 
-
                 session_path = os.path.join(video_path, session)
                 outpath = os.path.join(prefix, session)
                 os.makedirs(outpath, exist_ok = True)
@@ -235,42 +234,6 @@ class Rat7MDataset(BaseDataset):
                 if len(os.listdir(outpath)) == 0:
                     # print(f'removing: {outpath}')
                     os.rmdir(outpath)
-        
-
-    def _filter_coords(self, coords, kernel_size = 11, thresh = None, percentile = 90): 
-        ''' 
-        filters rat7m coordinates by using a median filter to 
-        detect outliar keypoints and masking them with nans 
-
-        if thresh is none, will threshold according to a percentile
-        for a given subject, keypoint, and coordinate (i.e. x, y, z)
-        '''
-        n_subjects, _, n_kpts, dim = coords.shape
-        coords_filtered = np.zeros(coords.shape) 
-
-        for i in range(n_subjects): 
-
-            for j in range(n_kpts):
-
-                for k in range(dim):
-
-                    x = coords[i, :, j, k] # only one subject in this dataset
-                    medfilt = scipy.signal.medfilt(x, kernel_size = kernel_size)
-                    diff = np.abs(x - medfilt)
-                    coords_filt = x.copy()
-
-                    # use a percentile-based threshold if not provided an
-                    # arbitrary threshold
-                    if thresh is None: 
-                        thresh = np.nanpercentile(diff, percentile)
-
-                    coords_filt[diff >= thresh] = np.nan
-                    coords_filtered[i, :, j, k] = coords_filt
-
-        mask = np.isnan(coords_filtered).any(axis = -1)
-        coords_filtered[mask] = np.nan
-
-        return coords_filtered
     
 
     def _get_videos(self, data_path, session_path, session): 
@@ -309,6 +272,11 @@ class Rat7MDataset(BaseDataset):
     def _process_session(self, calib_path, session_path, outpath, 
                          session, split, chunk_size = 3500): 
 
+        # number of images to generate from each video
+        split_frames = None
+        if self.split_frames_dict and split in self.split_frames_dict: 
+            split_frames = self.split_frames_dict[split]
+
         # select subset of metadata associated with the split 
         metadata = self.metadata[self.metadata['split'] == split]
 
@@ -317,9 +285,6 @@ class Rat7MDataset(BaseDataset):
         intrinsics, extrinsics, distortions, sync_dict = self.load_calibration(calib_path)
 
         video_paths = sorted(glob.glob(os.path.join(session_path, f'{session}-*.mp4')))
-
-        # cam_names = np.unique([os.path.splitext(os.path.basename(video_path))[0].split('-')[2]
-        #                        for video_path in video_paths]).tolist()
         
         start_frames = np.unique([int(os.path.splitext(os.path.basename(video_path))[0].split('-')[3])
                     for video_path in video_paths])
@@ -346,8 +311,8 @@ class Rat7MDataset(BaseDataset):
                 continue
              
             # load and format the 3d annotations
-            if self.debug_ix != -1:
-                pose_subset = pose[:, start_frame:start_frame + self.debug_ix, :, :]
+            if split_frames:
+                pose_subset = pose[:, start_frame:start_frame + split_frames, :, :]
             else:
                 pose_subset = pose[:, start_frame:start_frame + chunk_size, :, :]
 
@@ -369,7 +334,8 @@ class Rat7MDataset(BaseDataset):
                 video_info = self._process_session_train(
                     session_path, trial_outpath, 
                     session, start_frame, start_frames, 
-                    sync_dict, chunk_size = chunk_size)
+                    sync_dict, split_frames, 
+                    chunk_size = chunk_size)
 
             calib_dict = {
                 'intrinsic_matrices': intrinsics, 
@@ -386,7 +352,7 @@ class Rat7MDataset(BaseDataset):
 
     def _process_session_train(self, session_path, trial_outpath, 
                               session, start_frame, start_frames, 
-                              sync_dict, chunk_size = 3500): 
+                              sync_dict, split_frames, chunk_size = 3500): 
             
         # save video/image data in the expected format
         cam_names = list(sync_dict.keys())
@@ -403,7 +369,7 @@ class Rat7MDataset(BaseDataset):
             # save deserialized frames 
             for i, frame in enumerate(cam_frames): 
 
-                if i == self.debug_ix:
+                if split_frames and i == split_frames:
                     break
 
                 video_ix = frame // chunk_size
@@ -434,7 +400,8 @@ class Rat7MDataset(BaseDataset):
 
     def _process_session_test(self, session_path, trial_outpath, 
                               session, start_frame, start_frames, 
-                              sync_dict, chunk_size = 3500): 
+                              sync_dict, split_frames = None, 
+                              chunk_size = 3500): 
         
         # save video/image data in the expected format
         video_outpath = os.path.join(trial_outpath, 'vid')
@@ -464,9 +431,6 @@ class Rat7MDataset(BaseDataset):
                                     (video_info['camera_widths'], video_info['camera_heights']))
 
             for i, frame in enumerate(cam_frames): 
-
-                if i == self.debug_ix:
-                    break
 
                 video_ix = frame // chunk_size
                 cam_start_frame = start_frames[video_ix]

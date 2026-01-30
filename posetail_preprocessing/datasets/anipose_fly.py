@@ -16,13 +16,10 @@ from posetail_preprocessing.utils import io, assemble_extrinsics
 class AniposeFlyDataset(BaseDataset): 
 
     def __init__(self, dataset_path, dataset_outpath, 
-                 dataset_name = 'anipose_fly', 
-                 debug_ix = None):
+                 dataset_name = 'anipose_fly'):
         super().__init__(dataset_path, dataset_outpath)
 
         self.dataset_name = dataset_name
-        self.metadata = None
-        self.debug_ix = debug_ix
 
     def load_calibration(self, calib_path):
 
@@ -103,8 +100,12 @@ class AniposeFlyDataset(BaseDataset):
 
         return df
 
-    def select_splits(self):
+
+    def select_splits(self, split_dict = None, split_frames_dict = None, 
+                      random_state = 3):
         
+        self.split_frames_dict = split_frames_dict
+
         # NOTE: add arbitrary splits for testing offsets 
         subject_splits = [{'Fly 4_0'}, {'Fly 5_0'}]
         splits = ['val', 'test']
@@ -113,11 +114,9 @@ class AniposeFlyDataset(BaseDataset):
             self.metadata.loc[self.metadata['subject'].isin(subjects), 'split'] = splits[i]
 
         # only select 2 validation samples to use
-        val_mask = self.metadata['split'] == 'val'
-        self.metadata.loc[val_mask, 'include'] = False
-
-        val_ixs = self.metadata.loc[val_mask].sample(n = 2, random_state = 3).index
-        self.metadata.loc[val_ixs, 'include'] = True
+        if split_dict: 
+            for split, n in split_dict.items():
+                self._select_subset_for_split(split = split, n = n, random_state = random_state)
 
 
         return self.metadata
@@ -152,11 +151,6 @@ class AniposeFlyDataset(BaseDataset):
                 if len(os.listdir(outpath)) == 0:
                     os.rmdir(outpath)
 
-    def get_metadata(self):
-        return self.metadata
-    
-    def set_metadata(self, df): 
-        self.metadata = df 
 
     def _get_trials(self, subject_path, subject): 
 
@@ -198,14 +192,18 @@ class AniposeFlyDataset(BaseDataset):
 
     def _process_subject(self, subject_path, outpath, split): 
 
+        # number of images to generate from each video
+        split_frames = None
+        if self.split_frames_dict and split in self.split_frames_dict: 
+            split_frames = self.split_frames_dict[split]
+
         # select subset of metadata associated with the split 
         metadata = self.metadata[self.metadata['split'] == split]
 
         # load calibration data
         intrinsics, extrinsics, distortions, offset_dict = self.load_calibration(self.dataset_path)
-        cam_names = list(intrinsics.keys())
-        video_info_dict = defaultdict(dict)
 
+        # get videos
         video_paths = sorted(glob.glob(os.path.join(subject_path, 'videos-raw-compressed', f'*.mp4')))
         trials = set()
 
@@ -234,8 +232,21 @@ class AniposeFlyDataset(BaseDataset):
             trial_outpath = os.path.join(outpath, trial)
             os.makedirs(trial_outpath, exist_ok = True)
             data_path = os.path.join(subject_path, 'pose-3d', f'{trial}.csv')
+
             pose_dict = self.load_pose3d(data_path)
-            io.save_npz(pose_dict, trial_outpath, fname = 'pose3d')
+            pose_dict = self._subset_pose_dict(pose_dict, n_frames = split_frames)
+
+            # load and format the 3d annotations
+            pose = pose_dict['pose']
+            if split_frames:
+                pose_subset = pose[:, :split_frames, :, :]
+            else:
+                pose_subset = pose
+
+            pose_dict_subset = {'pose': pose_subset, 
+                                'keypoints': pose_dict['keypoints']}
+
+            io.save_npz(pose_dict_subset, trial_outpath, fname = 'pose3d')
 
             if split == 'test':  
                 # for test set, save as videos
@@ -245,7 +256,7 @@ class AniposeFlyDataset(BaseDataset):
                 # for train and validation sets, deserialize the camera videos 
                 # and save as images  
                 video_info = self._process_subject_train(
-                    cam_videos, trial_outpath)
+                    cam_videos, trial_outpath, split_frames = split_frames)
 
             calib_dict = {
                 'intrinsic_matrices': intrinsics, 
@@ -261,7 +272,7 @@ class AniposeFlyDataset(BaseDataset):
                     fname = 'metadata.yaml')
         
 
-    def _process_subject_train(self, video_paths, trial_outpath): 
+    def _process_subject_train(self, video_paths, trial_outpath, split_frames = None): 
 
         cam_height_dict = {}
         cam_width_dict = {}
@@ -281,7 +292,7 @@ class AniposeFlyDataset(BaseDataset):
             video_info = io.deserialize_video(
                 cam_video_path, 
                 cam_outpath, 
-                debug_ix = self.debug_ix)
+                debug_ix = split_frames)
             
             cam_height_dict[cam_name] = video_info['camera_heights']
             cam_width_dict[cam_name] = video_info['camera_widths']
@@ -321,7 +332,7 @@ class AniposeFlyDataset(BaseDataset):
 
             # copy video to desired location
             cam_video_outpath = os.path.join(outpath, f'{cam_name}.mp4')
-            shutil.copy2(cam_video_path, cam_video_outpath)
+            os.symlink(cam_video_path, cam_video_outpath)
 
         video_info = {
             'camera_heights': cam_height_dict, 

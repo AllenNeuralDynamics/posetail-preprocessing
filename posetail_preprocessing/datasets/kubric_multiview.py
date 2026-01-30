@@ -1,7 +1,7 @@
 import glob
 import os 
-import cv2
 import shutil
+from tqdm import tqdm
 
 import numpy as np
 import pandas as pd 
@@ -19,7 +19,6 @@ class KubricMultiviewDataset(BaseDataset):
         super().__init__(dataset_path, dataset_outpath)
 
         self.dataset_name = dataset_name
-        self.metadata = None
 
 
     def load_calibration(self, calib_path):
@@ -80,7 +79,7 @@ class KubricMultiviewDataset(BaseDataset):
 
             for i, session in enumerate(sessions): 
 
-                print(f'{i}/{len(sessions)}')
+                # print(f'{i}/{len(sessions)}')
 
                 # make sure data has been generated for this session
                 cams = io.get_dirs(os.path.join(self.dataset_path, split, session))
@@ -98,21 +97,26 @@ class KubricMultiviewDataset(BaseDataset):
         self.metadata = df
 
         return df
+    
 
-    def select_splits(self):  
+    def select_splits(self, split_dict = None, split_frames_dict = None, 
+                      random_state = 3):  
         '''
         mostly handled in self._get_session(), can 
-        further subsample here
+        further subsample here by passing a split_dict with 
+        the keys as splits ('train', 'test', 'val') and the
+        number of videos you want to sample from
+
+        e.g. {'train':50, 'val':2}
         '''
+        self.split_frames_dict = split_frames_dict
 
-        # only select 2 validation samples to use
-        val_mask = self.metadata['split'] == 'val'
-        self.metadata.loc[val_mask, 'include'] = False
-
-        val_ixs = self.metadata.loc[val_mask].sample(n = 2, random_state = 3).index
-        self.metadata.loc[val_ixs, 'include'] = True
+        if split_dict: 
+            for split, n in split_dict.items(): 
+                self._select_subset_for_split(n = n, split = split, random_state = random_state)
 
         return self.metadata 
+
 
     def select_train_set(self, n_train_videos = 25, seed = 3):
         '''     
@@ -142,7 +146,7 @@ class KubricMultiviewDataset(BaseDataset):
     def generate_dataset(self, splits = None): 
 
         # determine which dataset splits to generate
-        valid_splits = np.unique(self.metadata['split'])
+        valid_splits = pd.unique(self.metadata['split'])
 
         if splits is not None: 
             splits = set(splits)
@@ -154,7 +158,9 @@ class KubricMultiviewDataset(BaseDataset):
 
             sessions = io.get_dirs(os.path.join(self.dataset_path, split))
 
-            for i, session in enumerate(sessions): 
+            for i, session in enumerate(tqdm(sessions, desc = split)): 
+
+                # print(f'{split}: {i} / {len(sessions)}')
 
                 # make sure data has been generated for this session
                 cams = io.get_dirs(os.path.join(self.dataset_path, split, session))
@@ -172,12 +178,6 @@ class KubricMultiviewDataset(BaseDataset):
                     # print(f'removing: {outpath}')
                     os.rmdir(outpath) 
 
-
-    def get_metadata(self):
-        return self.metadata 
-    
-    def set_metadata(self, df): 
-        self.metadata = df 
 
     def _get_session(self, session_path, session, split):
 
@@ -203,6 +203,11 @@ class KubricMultiviewDataset(BaseDataset):
 
     def _process_session(self, session_path, outpath, session, split): 
 
+        # number of images to generate from each video
+        split_frames = None
+        if self.split_frames_dict and split in self.split_frames_dict: 
+            split_frames = self.split_frames_dict[split]
+
         # select the metadata for the given split
         metadata = self.metadata[self.metadata['split'] == split]
 
@@ -215,7 +220,7 @@ class KubricMultiviewDataset(BaseDataset):
         process = True
         df = metadata[metadata['id'] == session]
         if df.empty or not df['include'].values[0]:
-            print('skipping', session) 
+            # print('skipping', session) 
             process = False
 
         if process:
@@ -223,6 +228,7 @@ class KubricMultiviewDataset(BaseDataset):
             # load and format the 3d annotations
             data_path = os.path.join(session_path, 'tracks_3d.npz')
             pose_dict = self.load_pose3d(data_path)
+            pose_dict = self._subset_pose_dict(pose_dict, n_frames = split_frames)
             io.save_npz(pose_dict, outpath, fname = 'pose3d')
 
             # copy image folders to new outpath
@@ -237,8 +243,12 @@ class KubricMultiviewDataset(BaseDataset):
                 n_frames.append(len(img_paths))
 
                 for i, img in enumerate(img_paths):
+
+                    if split_frames and i == split_frames: 
+                        break 
+
                     new_img_path = os.path.join(img_outpath, f'img{str(i).zfill(6)}.png')
-                    shutil.copy2(img, new_img_path) 
+                    os.symlink(img, new_img_path) 
 
             cam_dict = {
                 'intrinsic_matrices': intrinsics, 

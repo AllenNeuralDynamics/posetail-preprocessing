@@ -13,12 +13,10 @@ from posetail_preprocessing.utils import io, assemble_extrinsics
 class ZefDataset(BaseDataset): 
 
     def __init__(self, dataset_path, dataset_outpath, 
-                 dataset_name = '3dzef', debug_ix = None):
+                 dataset_name = '3dzef'):
         super().__init__(dataset_path, dataset_outpath)
 
         self.dataset_name = dataset_name
-        self.metadata = None
-        self.debug_ix = debug_ix
     
 
     def load_calibration(self, calib_path): 
@@ -75,6 +73,7 @@ class ZefDataset(BaseDataset):
             subject_pose.append(pose3d)
 
         pose3d = np.stack(subject_pose, axis = 0) # (n_subjects, frame, kpts, 3)
+        
         keypoints = ['head']
         pose3d_dict = {'pose': pose3d, 'keypoints': keypoints}
 
@@ -104,11 +103,13 @@ class ZefDataset(BaseDataset):
 
         return df
 
-    def select_splits(self):
+    def select_splits(self, split_frames_dict = None):
 
+        self.split_frames_dict = split_frames_dict
+
+        splits = ['train', 'test']
         subject_splits = [{'ZebraFish-01', 'ZebraFish-02'},
                           {'ZebraFish-03', 'ZebraFish-04'}]
-        splits = ['train', 'test']
 
         for i, subjects in enumerate(subject_splits):
             self.metadata.loc[self.metadata['subject'].isin(subjects), 'split'] = splits[i]
@@ -118,7 +119,7 @@ class ZefDataset(BaseDataset):
     def generate_dataset(self, splits = None): 
 
         # determine which dataset splits to generate
-        valid_splits = np.unique(self.metadata['split'])
+        valid_splits = pd.unique(self.metadata['split'])
 
         if splits is not None: 
             splits = set(splits)
@@ -151,12 +152,6 @@ class ZefDataset(BaseDataset):
                         os.rmdir(outpath)
 
 
-    def get_metadata(self):
-        return self.metadata
-    
-    def set_metadata(self, df): 
-        self.metadata = df 
-
     def _solve_for_extrinsics(self, calib_path_intrinsic, calib_path_extrinsic):
 
         calib_data_intrinsic = io.load_json5(calib_path_intrinsic)
@@ -180,6 +175,7 @@ class ZefDataset(BaseDataset):
 
         return intrinsics, extrinsics, distortions
     
+
     def _get_session(self, session_path, session, split): 
 
         intrinsics_dict, *_ = self.load_calibration(session_path)
@@ -206,9 +202,13 @@ class ZefDataset(BaseDataset):
                 'include': True}]
         
         return rows
-    
 
     def _process_session(self, session_path, outpath, session, split): 
+
+        # number of images to generate from each video
+        split_frames = None
+        if self.split_frames_dict and split in self.split_frames_dict: 
+            split_frames = self.split_frames_dict[split]
 
         # select subset of metadata associated with the split 
         metadata = self.metadata[self.metadata['split'] == split]
@@ -233,6 +233,7 @@ class ZefDataset(BaseDataset):
             
             # load and format the 3d annotations
             pose_dict = self.load_pose3d(data_path)
+            pose_dict = self._subset_pose_dict(pose_dict, n_frames = split_frames)
             io.save_npz(pose_dict, outpath, fname = 'pose3d')
 
             # copy image folders to new outpath
@@ -246,15 +247,21 @@ class ZefDataset(BaseDataset):
                 cam_outpath = os.path.join(outpath, 'trial', 'img', cam_name)
                 os.makedirs(cam_outpath, exist_ok = True)
 
-                img_path = os.path.join(session_path, f'img{cam_name}')
-                imgs = sorted(glob.glob(os.path.join(img_path, '*.jpg')))
-                img = cv2.imread(imgs[0])
+                img_prefix = os.path.join(session_path, f'img{cam_name}')
+                img_paths = sorted(glob.glob(os.path.join(img_prefix, '*.jpg')))
+                img = cv2.imread(img_paths[0])
 
                 cam_height_dict[cam_name] = img.shape[0]
                 cam_width_dict[cam_name] = img.shape[1]
-                n_frames.append(len(imgs))
+                n_frames.append(len(img_paths))
 
-                shutil.copytree(img_path, cam_outpath, dirs_exist_ok = True)
+                for i, img_path in enumerate(img_paths):
+
+                    if split_frames and i == split_frames: 
+                        break 
+
+                    cam_img_outpath = os.path.join(cam_outpath, f'img{str(i).zfill(6)}.png')
+                    os.symlink(img_path, cam_img_outpath)
 
             cam_dict = {
                 'intrinsic_matrices': intrinsics, 
@@ -268,3 +275,5 @@ class ZefDataset(BaseDataset):
             # save camera metadata
             io.save_yaml(data = cam_dict, outpath = outpath, 
                     fname = 'metadata.yaml')
+            
+        

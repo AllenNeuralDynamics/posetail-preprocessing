@@ -13,12 +13,10 @@ from posetail_preprocessing.utils import io, assemble_extrinsics
 class DukeMouseDataset(BaseDataset): 
 
     def __init__(self, dataset_path, dataset_outpath, 
-                 dataset_name = 'duke_mouse', debug_ix = None):
+                 dataset_name = 'duke_mouse'):
         super().__init__(dataset_path, dataset_outpath)
 
         self.dataset_name = dataset_name
-        self.metadata = None
-        self.debug_ix = debug_ix
 
 
     def load_calibration(self, calib_path):
@@ -90,13 +88,20 @@ class DukeMouseDataset(BaseDataset):
         return df
 
 
-    def select_splits(self):
+    def select_splits(self, split_dict = None, split_frames_dict = None, 
+                      random_state = 3):
         
+        self.split_frames_dict = split_frames_dict
+
         subject_splits = [{'m1', 'm2'},  {'m3'},  {'m4', 'm5'}]
         splits = ['train', 'val', 'test']
 
         for i, subjects in enumerate(subject_splits):
             self.metadata.loc[self.metadata['subject'].isin(subjects), 'split'] = splits[i]
+
+        if split_dict: 
+            for split, n in split_dict.items():
+                self._select_subset_for_split(split = split, n = n, random_state = random_state)
 
         return self.metadata
     
@@ -104,7 +109,7 @@ class DukeMouseDataset(BaseDataset):
     def generate_dataset(self, splits = None): 
 
         # determine which dataset splits to generate
-        valid_splits = np.unique(self.metadata['split'])
+        valid_splits = pd.unique(self.metadata['split'])
 
         if splits is not None: 
             splits = set(splits)
@@ -127,13 +132,6 @@ class DukeMouseDataset(BaseDataset):
                 # clean up any empty directories
                 if len(os.listdir(outpath)) == 0:
                     os.rmdir(outpath)
-        
-
-    def get_metadata(self):
-        return self.metadata
-    
-    def set_metadata(self, df): 
-        self.metadata = df 
 
 
     def _get_videos(self, subject_path, subject): 
@@ -182,6 +180,11 @@ class DukeMouseDataset(BaseDataset):
 
     def _process_subject(self, subject_path, outpath, subject, 
                          split, chunk_size = 60000): 
+        
+        # number of images to generate from each video
+        split_frames = None
+        if self.split_frames_dict and split in self.split_frames_dict: 
+            split_frames = self.split_frames_dict[split]
 
         # select the metadata for the given split
         metadata = self.metadata[self.metadata['split'] == split]
@@ -215,19 +218,27 @@ class DukeMouseDataset(BaseDataset):
                     continue
 
             # load and format the 3d annotations
-            pose_dict_subset = {'pose': pose[start_frame: start_frame + chunk_size, :, :], 
-                                'keypoints': pose_dict['keypoints']}
+            if split_frames: 
+                pose_dict_subset = {'pose': pose[start_frame: start_frame + split_frames, :, :], 
+                                    'keypoints': pose_dict['keypoints']}
+            else: 
+                pose_dict_subset = {'pose': pose[start_frame: start_frame + chunk_size, :, :], 
+                                    'keypoints': pose_dict['keypoints']}
+                
             io.save_npz(pose_dict_subset, trial_outpath, fname = 'pose3d')
 
             # process trial depending on the split
             if split == 'test': 
                 # for test set, save as videos
                 video_info = self._process_subject_test(
-                    video_dir, start_frame, cam_names, subject, trial_outpath)
+                    video_dir, start_frame, cam_names, subject, 
+                    trial_outpath)
             else: 
                 # for train and validation sets, deserialize the camera videos 
                 # and save as images  
-                video_info = self._process_subject_train()
+                video_info = self._process_subject_train(
+                    self, video_dir, start_frame, cam_names, 
+                    subject, trial_outpath, split_frames = split_frames)
 
             calib_dict = {
                 'intrinsic_matrices': intrinsics, 
@@ -243,7 +254,7 @@ class DukeMouseDataset(BaseDataset):
             
 
     def _process_subject_train(self, video_dir, start_frame, cam_names, 
-                               subject, trial_outpath):
+                               subject, trial_outpath, split_frames = None):
         
         # deserialize the camera videos and save as images 
         cam_height_dict = {}
@@ -260,7 +271,7 @@ class DukeMouseDataset(BaseDataset):
                 cam_video_path, 
                 cam_outpath, 
                 start_frame = 0, 
-                debug_ix = self.debug_ix)
+                debug_ix = split_frames)
             
             # this specific subject/camera pair have multiple videos recorded 
             # rather than just one like the other cameras, so it must be 
@@ -277,8 +288,7 @@ class DukeMouseDataset(BaseDataset):
                     video_info = io.deserialize_video(
                         alt_video_path, 
                         cam_outpath, 
-                        start_frame = alt_start_frame, 
-                        debug_ix = self.debug_ix)
+                        start_frame = alt_start_frame)
 
             cam_height_dict[cam_name] = video_info['camera_heights']
             cam_width_dict[cam_name] = video_info['camera_widths']

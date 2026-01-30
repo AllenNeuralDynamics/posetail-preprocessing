@@ -12,14 +12,11 @@ from posetail_preprocessing.utils import io, assemble_extrinsics
 class PairR24MDataset(BaseDataset): 
 
     def __init__(self, dataset_path, dataset_outpath, 
-                 dataset_name = 'pairr24m', debug_ix = None, 
+                 dataset_name = 'pairr24m',
                  keypoint_format = 'absolutePosition'):
         super().__init__(dataset_path, dataset_outpath)
 
         self.dataset_name = dataset_name
-        self.metadata = None
-        self.debug_ix = debug_ix
-
         self.keypoint_format = keypoint_format # absolutePosition or relativePosition
     
     def load_calibration(self, calib_path):
@@ -55,7 +52,7 @@ class PairR24MDataset(BaseDataset):
 
         return intrinsics_dict, extrinsics_dict, distortions_dict
 
-    def load_pose3d(self, data_path, fmt = 'absolutePosition'):
+    def load_pose3d(self, data_path, fmt = 'absolutePosition', skip_id = None):
 
         df = pd.read_csv(data_path)
         columns = list(df.columns)
@@ -64,7 +61,12 @@ class PairR24MDataset(BaseDataset):
         subjects = ['_an1_', '_an2_']
         subject_pose = []
 
-        for subject in subjects: 
+        for i, subject in enumerate(subjects): 
+
+            # skip subject if specified (i.e. only load keypoints for one subject)
+            if skip_id and i == skip_id:
+                continue  
+
             pose3d = self._get_subject_pose(df, keypoints, subject = subject)
             subject_pose.append(pose3d)
 
@@ -101,9 +103,13 @@ class PairR24MDataset(BaseDataset):
         self.metadata = df
 
         return df
+    
 
-    def select_splits(self):
+    def select_splits(self, split_dict = None, split_frames_dict = None, 
+                      random_state = 3):
         
+        self.split_frames_dict = split_frames_dict
+
         val_mask = (self.metadata['session'].str.contains('SR9') &
                     self.metadata['session'].str.contains('SR11'))
         
@@ -115,14 +121,18 @@ class PairR24MDataset(BaseDataset):
 
         self.metadata.loc[val_mask, 'split'] = 'val'
         self.metadata.loc[test_mask, 'split'] = 'test'
-        self.metadata.loc[nan_mask, 'split'] = pd.NA
+        self.metadata.loc[nan_mask, 'split'] = None
+
+        if split_dict: 
+            for split, n in split_dict.items():
+                self._select_subset_for_split(split = split, n = n, random_state = random_state)
 
         return self.metadata
 
     def generate_dataset(self, splits = None): 
 
         # determine which dataset splits to generate
-        valid_splits = np.unique(self.metadata['split'])
+        valid_splits = pd.unique(self.metadata['split'])
 
         if splits is not None: 
             splits = set(splits)
@@ -134,7 +144,7 @@ class PairR24MDataset(BaseDataset):
         for split in splits:
 
             # skips sessions we aren't using
-            if pd.isna(split): 
+            if split is None: 
                 continue 
 
             os.makedirs(self.dataset_outpath, exist_ok = True)
@@ -155,12 +165,6 @@ class PairR24MDataset(BaseDataset):
                 # clean up any empty directories
                 if len(os.listdir(outpath)) == 0:
                     os.rmdir(outpath)
-
-    def get_metadata(self):
-        return self.metadata
-    
-    def set_metadata(self, df): 
-        self.metadata = df 
 
 
     def _get_keypoints(self, keypoints, fmt = None, subject = None): 
@@ -237,7 +241,12 @@ class PairR24MDataset(BaseDataset):
         return rows
     
     def _process_session(self, session_path, outpath, id, split, 
-                         chunk_size = 3500): 
+                         split_frames = None, chunk_size = 3500):
+         
+        # number of images to generate from each video
+        split_frames = None
+        if self.split_frames_dict and split in self.split_frames_dict: 
+            split_frames = self.split_frames_dict[split]
 
         # select subset of metadata associated with the split 
         metadata = self.metadata[self.metadata['split'] == split]
@@ -258,7 +267,11 @@ class PairR24MDataset(BaseDataset):
             return
         
         # load and format the 3d annotations
-        pose_dict = self.load_pose3d(data_path, fmt = self.keypoint_format)
+        if split == 'val' or split == 'test': 
+            pose_dict = self.load_pose3d(data_path, fmt = self.keypoint_format, skip_id = 1)
+        else:
+            pose_dict = self.load_pose3d(data_path, fmt = self.keypoint_format)
+        
         pose = pose_dict['pose']
 
         # traverse the trials
@@ -273,7 +286,12 @@ class PairR24MDataset(BaseDataset):
             # load and format the 3d annotations
             trial_outpath = os.path.join(outpath, str(start_frame))
 
-            pose_dict_subset = {'pose': pose[start_frame: start_frame + chunk_size, :, :], 
+            if split_frames:
+                pose_subset = pose[:, start_frame:start_frame + split_frames, :, :]
+            else:
+                pose_subset = pose[:, start_frame:start_frame + chunk_size, :, :]
+
+            pose_dict_subset = {'pose': pose_subset, 
                                 'keypoints': pose_dict['keypoints']}
             io.save_npz(pose_dict_subset, trial_outpath, fname = 'pose3d')
 
@@ -288,7 +306,7 @@ class PairR24MDataset(BaseDataset):
                 # and save as images  
                 video_info = self._process_session_train(
                     session_path, trial_outpath, 
-                    cam_names, start_frame)
+                    cam_names, start_frame, split_frames)
 
             calib_dict = {
                 'intrinsic_matrices': intrinsics, 
@@ -303,7 +321,7 @@ class PairR24MDataset(BaseDataset):
             
 
     def _process_session_train(self, video_dir, trial_outpath, 
-                               cam_names, start_frame): 
+                               cam_names, start_frame, split_frames = None): 
 
         # deserialize the camera videos and save as images 
         cam_height_dict = {}
@@ -321,7 +339,7 @@ class PairR24MDataset(BaseDataset):
                 cam_video_path, 
                 cam_outpath, 
                 start_frame = 0, 
-                debug_ix = self.debug_ix)
+                debug_ix = split_frames)
 
             cam_height_dict[cam_name] = video_info['camera_heights']
             cam_width_dict[cam_name] = video_info['camera_widths']
@@ -364,7 +382,7 @@ class PairR24MDataset(BaseDataset):
             fps.append(video_info['fps'])
 
             # copy video to desired location
-            shutil.copy2(cam_video_path, cam_video_outpath)
+            os.symlink(cam_video_path, cam_video_outpath)
 
         video_info = {
             'cam_heights': cam_height_dict, 
