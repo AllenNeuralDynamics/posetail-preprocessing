@@ -55,15 +55,30 @@ class KubricMultiviewDataset(BaseDataset):
 
     def load_pose3d(self, data_path, eps = 1e-6):
 
-        # filter coordinates based on movement threshold
-        coords = np.array(np.load(data_path)['tracks_3d'])
+        # load 3d coordinates and filter coordinates based on
+        # a movement threshold
+        pose_path = os.path.join(data_path, 'tracks_3d.npz')
+        coords = np.array(np.load(pose_path)['tracks_3d'])
         total_movement = reduce(np.abs(np.diff(coords, axis = 0)), 'n k r -> k', 'sum')
         movement_check = total_movement > eps
         coords = coords[:, movement_check]
         pose3d = np.expand_dims(coords, axis = 0) # (n_subjects, time, keypoints, 3)
 
+        # load visibilities for each camera view
+        cam_names = glob.glob(os.path.join(data_path, 'view_*')) 
+        occlusions = []
+
+        for cam_name in cam_names: 
+
+            occlusion_path = os.path.join(data_path, cam_name, 'tracks_2d.npz')
+            cam_occlusions = np.load(occlusion_path)['occlusion']
+            occlusions.append(cam_occlusions)
+
+        visibility = ~np.expand_dims(np.stack(occlusions, axis = -1), axis = 0) # (n_subjects, time, kpts, views)
+
+        # collate pose, vis, and 
         keypoints = [f'kpt{i}' for i in range(pose3d.shape[2])]
-        pose3d_dict = {'pose': pose3d, 'keypoints': keypoints}
+        pose3d_dict = {'pose': pose3d, 'keypoints': keypoints, 'vis': visibility}
 
         return pose3d_dict 
 
@@ -226,8 +241,7 @@ class KubricMultiviewDataset(BaseDataset):
         if process:
             
             # load and format the 3d annotations
-            data_path = os.path.join(session_path, 'tracks_3d.npz')
-            pose_dict = self.load_pose3d(data_path)
+            pose_dict = self.load_pose3d(session_path)
             pose_dict = self._subset_pose_dict(pose_dict, n_frames = split_frames)
             io.save_npz(pose_dict, outpath, fname = 'pose3d')
 

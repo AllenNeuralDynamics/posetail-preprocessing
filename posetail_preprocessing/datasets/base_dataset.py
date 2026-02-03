@@ -36,11 +36,13 @@ class BaseDataset(ABC):
     def _subset_pose_dict(self, pose_dict, start_frame = 0, n_frames = None): 
         
         # subset coords to correspond to the portion of the dataset used
-        pose = pose_dict['pose']
+        if n_frames:
+            # update the coords
+            pose_dict['pose'] = pose_dict['pose'][:, start_frame:start_frame + n_frames, :, :]
 
-        if n_frames: 
-            pose = pose[:, start_frame:start_frame + n_frames, :, :]
-            pose_dict['pose'] = pose
+            # update the visibilities
+            if 'vis' in pose_dict:
+                pose_dict['vis'] = pose_dict['vis'][:, start_frame:start_frame + n_frames, :, :]
 
         return pose_dict
 
