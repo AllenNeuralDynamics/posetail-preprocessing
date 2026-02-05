@@ -75,8 +75,9 @@ class KubricMultiviewDataset(BaseDataset):
             occlusions.append(cam_occlusions)
 
         visibility = ~np.expand_dims(np.stack(occlusions, axis = -1), axis = 0) # (n_subjects, time, kpts, views)
+        visibility = visibility[:, :, movement_check, :]
 
-        # collate pose, vis, and 
+        # collate pose, vis, and keypoint names
         keypoints = [f'kpt{i}' for i in range(pose3d.shape[2])]
         pose3d_dict = {'pose': pose3d, 'keypoints': keypoints, 'vis': visibility}
 

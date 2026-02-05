@@ -144,20 +144,16 @@ class POPDataset(BaseDataset):
                     continue
 
                 subject_path = os.path.join(self.dataset_path, subject_count)
+                subject_outpath = os.path.join(self.dataset_outpath, split, subject_count)
                 sessions = io.get_dirs(subject_path)
 
                 for session in sessions:  
 
                     session_path = os.path.join(subject_path, session)
-                    outpath = os.path.join(self.dataset_outpath, split, subject_count, session)
-                    os.makedirs(outpath, exist_ok = True)
+                    outpath = os.path.join(subject_outpath, session)
                     self._process_session(session_path, outpath, session,
                                           metadata = self.metadata, 
                                           split = split)
-                    
-                    # clean up any empty directories
-                    if len(os.listdir(outpath)) == 0:
-                        os.rmdir(outpath)
 
 
     def _get_splits(self, session_path, session): 
@@ -223,7 +219,7 @@ class POPDataset(BaseDataset):
     
         # load and format the 3d annotations
         pose_dict = self.load_pose3d(data_path)
-        pose_dict = self._subset_pose_dict(data_path, n_frames = split_frames)
+        pose_dict = self._subset_pose_dict(pose_dict, n_frames = split_frames)
 
         # reconstruct the id
         id = f'{session}_{split.capitalize()}'
@@ -237,6 +233,7 @@ class POPDataset(BaseDataset):
 
         if process: 
 
+            os.makedirs(trial_outpath, exist_ok = True)
             io.save_npz(pose_dict, trial_outpath, fname = 'pose3d')
 
             # put videos/frames in the desired format
@@ -248,7 +245,9 @@ class POPDataset(BaseDataset):
                 # for train and validation sets, deserialize the camera videos 
                 # and save as images  
                 video_info = self._process_session_train(
-                    split_path, trial_outpath, session, cam_names)
+                    split_path, trial_outpath, session, 
+                    cam_names, split_frames = split_frames
+                )
 
             calib_dict = {
                 'intrinsic_matrices': intrinsics, 

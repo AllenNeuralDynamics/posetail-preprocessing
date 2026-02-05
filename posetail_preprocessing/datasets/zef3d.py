@@ -143,7 +143,7 @@ class ZefDataset(BaseDataset):
                 for session in sessions: 
 
                     session_path = os.path.join(orig_split_path, session)
-                    outpath = os.path.join(self.dataset_outpath, split, session)
+                    outpath = os.path.join(self.dataset_outpath, split, session, 'trial')
                     os.makedirs(outpath, exist_ok = True)
                     self._process_session(session_path, outpath, session, split)
                 
@@ -244,7 +244,7 @@ class ZefDataset(BaseDataset):
 
             for cam_name in cam_names:
 
-                cam_outpath = os.path.join(outpath, 'trial', 'img', cam_name)
+                cam_outpath = os.path.join(outpath, 'img', cam_name)
                 os.makedirs(cam_outpath, exist_ok = True)
 
                 img_prefix = os.path.join(session_path, f'img{cam_name}')

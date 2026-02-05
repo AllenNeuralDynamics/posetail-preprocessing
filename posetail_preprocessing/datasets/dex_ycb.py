@@ -121,14 +121,15 @@ class DexYCBDataset(BaseDataset):
             for session in sessions: 
 
                 session_path = os.path.join(self.dataset_path, session)
-                outpath = os.path.join(self.dataset_outpath, split, session, 'trial')
-                os.makedirs(outpath, exist_ok = True)
-                self._process_session(session_path, outpath, session, split) 
+                session_outpath = os.path.join(self.dataset_outpath, split, session)
+                trial_outpath = os.path.join(session_outpath, 'trial')
+                os.makedirs(trial_outpath, exist_ok = True)
+                self._process_session(session_path, trial_outpath, session, split) 
 
                 # clean up any empty directories
-                if len(os.listdir(outpath)) == 0:
-                    # print(f'removing: {outpath}')
-                    os.rmdir(outpath)
+                if len(os.listdir(trial_outpath)) == 0:
+                    print(f'removing: {session_outpath}')
+                    shutil.rmtree(session_outpath)
 
 
     def _get_sessions(self, session_path, session): 

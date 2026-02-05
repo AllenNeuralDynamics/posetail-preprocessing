@@ -339,7 +339,7 @@ class AcinosetDataset(BaseDataset):
             cam_dict.update(video_info) # height, width, n_frames, fps
 
             # save camera metadata
-            io.save_yaml(data = cam_dict, outpath = trial_path, 
+            io.save_yaml(data = cam_dict, outpath = trial_outpath, 
                          fname = 'metadata.yaml')
             
 
