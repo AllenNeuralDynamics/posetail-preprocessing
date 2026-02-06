@@ -1,12 +1,13 @@
 import glob
 import os 
 import shutil
-from tqdm import tqdm
 
 import numpy as np
 import pandas as pd 
 
 from einops import rearrange, reduce
+from tqdm import tqdm
+
 from posetail_preprocessing.datasets import BaseDataset
 from posetail_preprocessing.utils import io, disassemble_extrinsics
 
@@ -93,9 +94,7 @@ class KubricMultiviewDataset(BaseDataset):
 
             sessions = io.get_dirs(os.path.join(self.dataset_path, split))
 
-            for i, session in enumerate(sessions): 
-
-                # print(f'{i}/{len(sessions)}')
+            for i, session in enumerate(tqdm(sessions, desc = 'metadata generation')): 
 
                 # make sure data has been generated for this session
                 cams = io.get_dirs(os.path.join(self.dataset_path, split, session))
@@ -175,8 +174,6 @@ class KubricMultiviewDataset(BaseDataset):
             sessions = io.get_dirs(os.path.join(self.dataset_path, split))
 
             for i, session in enumerate(tqdm(sessions, desc = split)): 
-
-                # print(f'{split}: {i} / {len(sessions)}')
 
                 # make sure data has been generated for this session
                 cams = io.get_dirs(os.path.join(self.dataset_path, split, session))

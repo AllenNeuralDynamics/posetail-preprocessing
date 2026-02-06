@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd 
 
 from einops import rearrange
+from tqdm import tqdm
 
 from posetail_preprocessing.datasets import BaseDataset
 from posetail_preprocessing.utils import io, assemble_extrinsics
@@ -179,7 +180,7 @@ class AniposeFlyDataset(BaseDataset):
 
             subjects = io.get_dirs(self.dataset_path)
 
-            for subject in subjects: 
+            for subject in tqdm(subjects, desc = split): 
 
                 if 'Fly' not in subject: 
                     continue

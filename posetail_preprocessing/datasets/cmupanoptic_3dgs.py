@@ -6,6 +6,8 @@ import shutil
 import numpy as np
 import pandas as pd 
 
+from tqdm import tqdm
+
 from posetail_preprocessing.datasets import BaseDataset
 from posetail_preprocessing.utils import io
 
@@ -79,9 +81,11 @@ class CMUPanopticGSDataset(BaseDataset):
 
     def select_splits(self, split_dict = None, split_frames_dict = None, 
                       random_state = 3):
-        
-        # NOTE: train/test splits were mostly curated in self._get_session
+
         self.split_frames_dict = split_frames_dict 
+
+        # use this dataset only for evaluation
+        self.metadata['split'] = 'test'
 
         if split_dict: 
             for split, n in split_dict.items():
@@ -105,7 +109,7 @@ class CMUPanopticGSDataset(BaseDataset):
 
         for split in splits: 
 
-            for session in sessions: 
+            for session in tqdm(sessions, desc = split): 
 
                 outpath = os.path.join(self.dataset_outpath, split, session, 'trial')
                 os.makedirs(outpath, exist_ok = True)
@@ -166,8 +170,8 @@ class CMUPanopticGSDataset(BaseDataset):
 
             # load calibration data
             calib_split = os.path.splitext(os.path.basename(calib_path))[0].split('_')[0]
-            if split != calib_split: 
-                continue
+            # if split != calib_split: 
+            #     continue
 
             intrinsics, extrinsics, distortions, _ = self.load_calibration(calib_path)
             cam_names = list(intrinsics.keys())

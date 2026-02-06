@@ -7,6 +7,8 @@ import shutil
 import numpy as np
 import pandas as pd 
 
+from tqdm import tqdm
+
 from posetail_preprocessing.datasets import BaseDataset
 from posetail_preprocessing.utils import io, assemble_extrinsics
 
@@ -165,7 +167,7 @@ class CMUPanopticDataset(BaseDataset):
 
             sessions = io.get_dirs(self.dataset_path)
 
-            for session in sessions: 
+            for session in tqdm(sessions, desc = split): 
 
                 outpath = os.path.join(self.dataset_outpath, split, session, 'trial')
                 os.makedirs(outpath, exist_ok = True)

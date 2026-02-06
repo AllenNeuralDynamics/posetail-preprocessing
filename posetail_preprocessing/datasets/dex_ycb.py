@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd 
 
 from einops import reduce
+from tqdm import tqdm
 
 from posetail_preprocessing.datasets import BaseDataset
 from posetail_preprocessing.utils import io
@@ -118,7 +119,7 @@ class DexYCBDataset(BaseDataset):
 
         for split in splits:
 
-            for session in sessions: 
+            for session in tqdm(sessions, desc = split): 
 
                 session_path = os.path.join(self.dataset_path, session)
                 session_outpath = os.path.join(self.dataset_outpath, split, session)

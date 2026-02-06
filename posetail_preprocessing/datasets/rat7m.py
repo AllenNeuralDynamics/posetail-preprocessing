@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd 
 
 from collections import defaultdict
+from tqdm import tqdm
 
 from posetail_preprocessing.datasets import BaseDataset
 from posetail_preprocessing.utils import io, assemble_extrinsics, filter_coords
@@ -223,7 +224,7 @@ class Rat7MDataset(BaseDataset):
             os.makedirs(prefix, exist_ok = True)
             sessions = io.get_dirs(video_path)
 
-            for i, session in enumerate(sessions):
+            for i, session in enumerate(tqdm(sessions, desc = split)):
 
                 session_path = os.path.join(video_path, session)
                 outpath = os.path.join(prefix, session)

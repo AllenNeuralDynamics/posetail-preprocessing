@@ -6,6 +6,8 @@ import shutil
 import numpy as np
 import pandas as pd 
 
+from tqdm import tqdm
+
 from posetail_preprocessing.datasets import BaseDataset
 from posetail_preprocessing.utils import io, assemble_extrinsics
 
@@ -150,7 +152,7 @@ class PairR24MDataset(BaseDataset):
             os.makedirs(self.dataset_outpath, exist_ok = True)
             sessions = io.get_dirs(self.dataset_path)
 
-            for session in sessions:
+            for session in tqdm(sessions, desc = split):
 
                 # skip this session because there are only 3 cameras and missing
                 # videos for cam 3 - only session like this 

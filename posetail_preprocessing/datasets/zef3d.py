@@ -6,6 +6,8 @@ import shutil
 import numpy as np
 import pandas as pd 
 
+from tqdm import tqdm
+
 from posetail_preprocessing.datasets import BaseDataset
 from posetail_preprocessing.utils import io, assemble_extrinsics
 
@@ -107,9 +109,11 @@ class ZefDataset(BaseDataset):
 
         self.split_frames_dict = split_frames_dict
 
-        splits = ['train', 'test']
+        splits = ['train', 'test', None]
         subject_splits = [{'ZebraFish-01', 'ZebraFish-02'},
-                          {'ZebraFish-03', 'ZebraFish-04'}]
+                          {'ZebraFish-03', 'ZebraFish-04'}, 
+                          {'ZebraFish-05', 'ZebraFish-06', 
+                           'ZebraFish-07', 'ZebraFish-08'}]
 
         for i, subjects in enumerate(subject_splits):
             self.metadata.loc[self.metadata['subject'].isin(subjects), 'split'] = splits[i]
@@ -135,12 +139,12 @@ class ZefDataset(BaseDataset):
 
             orig_splits = io.get_dirs(self.dataset_path)
 
-            for orig_split in orig_splits: 
+            for orig_split in tqdm(orig_splits, desc = f'{split}_outer'): 
 
                 orig_split_path = os.path.join(self.dataset_path, orig_split)
                 sessions = io.get_dirs(orig_split_path)
 
-                for session in sessions: 
+                for session in tqdm(sessions, desc = f'{split}_inner'): 
 
                     session_path = os.path.join(orig_split_path, session)
                     outpath = os.path.join(self.dataset_outpath, split, session, 'trial')

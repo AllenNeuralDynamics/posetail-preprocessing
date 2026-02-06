@@ -6,6 +6,8 @@ import scipy
 import numpy as np
 import pandas as pd 
 
+from tqdm import tqdm
+
 from posetail_preprocessing.datasets import BaseDataset
 from posetail_preprocessing.utils import io, assemble_extrinsics
 
@@ -122,7 +124,7 @@ class DukeMouseDataset(BaseDataset):
 
             subjects = io.get_dirs(self.dataset_path)
 
-            for subject in subjects: 
+            for subject in tqdm(subjects, desc = split): 
 
                 subject_path = os.path.join(self.dataset_path, subject)
                 outpath = os.path.join(self.dataset_outpath, split, subject)
