@@ -7,7 +7,7 @@ import shutil
 import numpy as np
 import pandas as pd 
 
-from collections import defaultdict
+from einops import rearrange
 
 from posetail_preprocessing.datasets import BaseDataset
 from posetail_preprocessing.utils import io, assemble_extrinsics
@@ -16,10 +16,11 @@ from posetail_preprocessing.utils import io, assemble_extrinsics
 class AniposeFlyDataset(BaseDataset): 
 
     def __init__(self, dataset_path, dataset_outpath, 
-                 dataset_name = 'anipose_fly'):
+                 dataset_name = 'anipose_fly', error_thresh = None):
         super().__init__(dataset_path, dataset_outpath)
 
         self.dataset_name = dataset_name
+        self.error_thresh = error_thresh
 
     def load_calibration(self, calib_path):
 
@@ -61,22 +62,63 @@ class AniposeFlyDataset(BaseDataset):
 
         return intrinsics_dict, extrinsics_dict, distortions_dict, offset_dict
 
+
+    def _load_transf_matrix(self, df):
+
+        transf_matrix = np.identity(3)
+
+        for i in range(3):
+            for j in range(3):
+                transf_matrix[i, j] = np.mean(df[f'M_{i}{j}'])
+
+        return transf_matrix
+
+
+    def _load_center(self, df): 
+
+        center = np.zeros(3)
+
+        for i in range(3):
+            center[i] = np.mean(df[f'center_{i}'])
+
+        return center
+
+
     def load_pose3d(self, data_path):
 
         df = pd.read_csv(data_path)
 
-        kpts = [col for col in df.columns if col.endswith('_x')
-                or col.endswith('_y') or col.endswith('_z')]
-
+        kpts = sorted([col for col in df.columns if col.endswith('_x')
+                    or col.endswith('_y') or col.endswith('_z')])
         unique_kpts = np.unique([kpt.split('_')[0] for kpt in kpts])
 
-        coords = df[kpts].values
-        n_frames, _ = coords.shape
-        pose3d = coords.reshape(1, n_frames, len(unique_kpts), 3) # (n_subjects, time, bodyparts, 3)
+        error_cols = [col for col in df.columns if col.endswith('_error')]
 
+        # get transformation matrix and center 
+        transf_matrix = self._load_transf_matrix(df)
+        center = self._load_center(df)
+
+        coords = df[kpts].values
+        n_frames = coords.shape[0]
+        n_kpts = len(unique_kpts)
+        coords = rearrange(coords, 't (n r) -> t n r', t = n_frames, n = n_kpts)
+
+        # filter coords
+        if self.error_thresh:
+            errors = df[error_cols].values
+            errors[np.isnan(errors)] = 10000
+            error_mask = (errors >= self.error_thresh)
+            coords[error_mask] = np.nan
+
+        # undo transformation
+        coords = rearrange(coords, 't n r -> (t n) r', t = n_frames, n = n_kpts)
+        coords_transf = (coords + center).dot(np.linalg.inv(transf_matrix.T))
+
+        pose3d = rearrange(coords_transf, '(t n) r -> 1 t n r', t = n_frames, r = 3)  # (n_subjects, time, kpts, 3)
         pose3d_dict = {'pose': pose3d, 'keypoints': unique_kpts}
 
         return pose3d_dict
+
 
     def generate_metadata(self):
         
