@@ -123,14 +123,12 @@ class AniposeFlyDataset(BaseDataset):
 
     def generate_metadata(self):
         
-        subjects = io.get_dirs(self.dataset_path)
+        # subjects = io.get_dirs(self.dataset_path)
+        os.chdir(self.dataset_path)
+        subjects = glob.glob('*/*/Fly *')
         rows = []
 
         for subject in subjects: 
-
-            if subject == 'Calibration': 
-                continue 
-
             subject_path = os.path.join(self.dataset_path, subject)
             metadata_rows = self._get_trials(subject_path, subject)
             rows.extend(metadata_rows)
@@ -149,8 +147,10 @@ class AniposeFlyDataset(BaseDataset):
         
         self.split_frames_dict = split_frames_dict
 
-        # NOTE: add arbitrary splits for testing offsets 
-        subject_splits = [{'Fly 4_0'}, {'Fly 5_0'}]
+        subject_splits = [{'grant/11.29.22/Fly 2_0'},
+                          {'grant/11.29.22/Fly 1_0',
+                           'grant/11.29.22/Fly 4_0',
+                           }]
         splits = ['val', 'test']
 
         for i, subjects in enumerate(subject_splits):
@@ -175,18 +175,13 @@ class AniposeFlyDataset(BaseDataset):
         else: 
             splits = valid_splits
 
+        os.chdir(self.dataset_path)
+        subjects = glob.glob('*/*/Fly *')            
         # generate the dataset for each split
         for split in splits: 
-
-            subjects = io.get_dirs(self.dataset_path)
-
             for subject in tqdm(subjects, desc = split): 
-
-                if 'Fly' not in subject: 
-                    continue
-
                 subject_path = os.path.join(self.dataset_path, subject)
-                outpath = os.path.join(self.dataset_outpath, split, subject)
+                outpath = os.path.join(self.dataset_outpath, split, subject.replace('/', '-'))
                 os.makedirs(outpath, exist_ok = True)
                 self._process_subject(subject_path, outpath, split)
 
@@ -197,18 +192,20 @@ class AniposeFlyDataset(BaseDataset):
 
     def _get_trials(self, subject_path, subject): 
 
-        intrinsics_dict, *_ = self.load_calibration(self.dataset_path)
+        calib_path = os.path.join(self.dataset_path, os.path.dirname(subject))
+        intrinsics_dict, *_ = self.load_calibration(calib_path)
         n_cams = len(intrinsics_dict)
 
-        video_paths = sorted(glob.glob(os.path.join(subject_path, 'videos-raw-compressed', '*.mp4')))
+        video_paths = sorted(glob.glob(os.path.join(subject_path, 'Raw Video', '*.avi')))
         unique_trials = set()
         rows = []
 
-        for i, video_path in enumerate(video_paths):
+        for i, video_path in enumerate(tqdm(video_paths)):
 
             trial = os.path.splitext(os.path.basename(video_path))[0]
-            cs = trial.split(' ')
-            trial = f'{cs[0]} {cs[1]}  {cs[3]} {cs[4]}'
+            # cs = trial.split(' ')
+            # trial = f'{cs[0]} {cs[1]}  {cs[3]} {cs[4]}'
+            trial = trial.split('Cam')[0].strip()
 
             cap = cv2.VideoCapture(video_path)
             n_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
@@ -243,26 +240,29 @@ class AniposeFlyDataset(BaseDataset):
         # select subset of metadata associated with the split 
         metadata = self.metadata[self.metadata['split'] == split]
 
+        calib_path = os.path.dirname(subject_path)
         # load calibration data
-        intrinsics, extrinsics, distortions, offset_dict = self.load_calibration(self.dataset_path)
+        intrinsics, extrinsics, distortions, offset_dict = self.load_calibration(calib_path)
 
         # get videos
-        video_paths = sorted(glob.glob(os.path.join(subject_path, 'videos-raw-compressed', f'*.mp4')))
+        video_paths = sorted(glob.glob(os.path.join(subject_path, 'Raw Video', f'*.avi')))
         trials = set()
 
         for i, video_path in enumerate(video_paths): 
 
             trial = os.path.splitext(os.path.basename(video_path))[0]
-            cs = trial.split(' ')
-            trial = f'{cs[0]} {cs[1]}  {cs[3]} {cs[4]}'
+            # cs = trial.split(' ')
+            # trial = f'{cs[0]} {cs[1]}  {cs[3]} {cs[4]}'
+            trial = trial.split('Cam')[0].strip()
             trials.add(trial)
 
         # traverse the camera names
-        for trial in trials: 
+        for trial in tqdm(trials): 
 
             # get videos from each camera corresponding to this trial
-            cs = os.path.basename(trial).split(' ')
-            cam_videos = os.path.join(subject_path, 'videos-raw-compressed', f'{cs[0]} {cs[1]}*{cs[3]} {cs[4]}.mp4')
+            # cs = os.path.basename(trial).split(' ')
+            # cam_videos = os.path.join(subject_path, 'Raw Video', f'{cs[0]} {cs[1]}*{cs[3]} {cs[4]}.mp4')
+            cam_videos = os.path.join(subject_path, 'Raw Video', trial + '*.avi')
             cam_videos = sorted(glob.glob(cam_videos))
 
             # skip trial if metadata excludes it 
@@ -274,7 +274,8 @@ class AniposeFlyDataset(BaseDataset):
             # load and format the 3d annotations
             trial_outpath = os.path.join(outpath, trial)
             os.makedirs(trial_outpath, exist_ok = True)
-            data_path = os.path.join(subject_path, 'pose-3d', f'{trial}.csv')
+            print(os.path.join(subject_path, 'pose-3d', f'{trial}*.csv'))
+            data_path = glob.glob(os.path.join(subject_path, 'pose-3d', f'{trial}*.csv'))[0]
 
             pose_dict = self.load_pose3d(data_path)
             pose_dict = self._subset_pose_dict(pose_dict, n_frames = split_frames)
@@ -326,7 +327,8 @@ class AniposeFlyDataset(BaseDataset):
             
             # extract info from the video   
             cam_trial = os.path.splitext(os.path.basename(cam_video_path))[0] 
-            cam_name = cam_trial.split(' ')[2].split('-')[1]
+            # cam_name = cam_trial.split(' ')[2].split('-')[1]
+            cam_name = cam_trial.split('Cam-')[1][0]
 
             # deserialize video into images
             cam_outpath = os.path.join(trial_outpath, 'img', cam_name)
@@ -365,7 +367,8 @@ class AniposeFlyDataset(BaseDataset):
 
             # extract info from the video   
             cam_trial = os.path.splitext(os.path.basename(cam_video_path))[0] 
-            cam_name = cam_trial.split(' ')[2].split('-')[1]
+            # cam_name = cam_trial.split(' ')[2].split('-')[1]
+            cam_name = cam_trial.split('Cam-')[1][0]
 
             video_info = io.get_video_info(cam_video_path)
             cam_height_dict[cam_name] = video_info['camera_heights']
