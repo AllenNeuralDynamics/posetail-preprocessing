@@ -401,8 +401,7 @@ class Rat7MDataset(BaseDataset):
 
     def _process_session_test(self, session_path, trial_outpath, 
                               session, start_frame, start_frames, 
-                              sync_dict, split_frames = None, 
-                              chunk_size = 3500): 
+                              sync_dict, chunk_size = 3500): 
         
         # save video/image data in the expected format
         video_outpath = os.path.join(trial_outpath, 'vid')
@@ -425,26 +424,36 @@ class Rat7MDataset(BaseDataset):
             cam_video_path = os.path.join(session_path, f'{session}-{cam_name}-{cam_start_frame}.mp4')
             video_info = io.get_video_info(cam_video_path)
 
-            # generate a new synced video 
-            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            # NOTE: syncing the videos takes a while, so skip if it's already been generated
+            sync = True
             cam_video_outpath = os.path.join(video_outpath, f'{cam_name}.mp4')
-            writer = cv2.VideoWriter(cam_video_outpath, fourcc, video_info['fps'], 
-                                    (video_info['camera_widths'], video_info['camera_heights']))
 
-            for i, frame in enumerate(cam_frames): 
+            if os.path.exists(cam_video_outpath): 
+                print(f'skipping test video generation for {cam_video_outpath} (already exists)')
+                sync = False
 
-                video_ix = frame // chunk_size
-                cam_start_frame = start_frames[video_ix]
-                cam_video_path = os.path.join(session_path, f'{session}-{cam_name}-{cam_start_frame}.mp4')
+            if sync:
 
-                frame = io.get_frame_synced(
-                    video_path = cam_video_path, 
-                    frame_ix = frame - cam_start_frame, 
-                    frame_ix_synced = i)
+                # generate a new synced video 
+                fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+                writer = cv2.VideoWriter(cam_video_outpath, fourcc, video_info['fps'], 
+                                        (video_info['camera_widths'], video_info['camera_heights']))
+
+                for i, frame in enumerate(cam_frames): 
+
+                    video_ix = frame // chunk_size
+                    cam_start_frame = start_frames[video_ix]
+                    cam_video_path = os.path.join(session_path, f'{session}-{cam_name}-{cam_start_frame}.mp4')
+
+                    frame = io.get_frame_synced(
+                        video_path = cam_video_path, 
+                        frame_ix = frame - cam_start_frame, 
+                        frame_ix_synced = i)
+                    
+                    writer.write(frame)
                 
-                writer.write(frame)
+                writer.release()
             
-            writer.release()
             cam_height_dict[cam_name] = video_info['camera_heights']
             cam_width_dict[cam_name] = video_info['camera_widths']
             num_frames.append(video_info['num_frames'])

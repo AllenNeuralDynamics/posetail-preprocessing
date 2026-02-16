@@ -156,7 +156,8 @@ class ZefDataset(BaseDataset):
                         os.rmdir(outpath)
 
 
-    def _solve_for_extrinsics(self, calib_path_intrinsic, calib_path_extrinsic):
+    def _solve_for_extrinsics(self, calib_path_intrinsic, calib_path_extrinsic, 
+                              method = cv2.SOLVEPNP_ITERATIVE):
 
         calib_data_intrinsic = io.load_json5(calib_path_intrinsic)
         calib_data_extrinsic = io.load_json5(calib_path_extrinsic)
@@ -172,7 +173,7 @@ class ZefDataset(BaseDataset):
             image_points, 
             intrinsics, 
             distortions, 
-            flags = cv2.SOLVEPNP_AP3P)
+            flags = method)
 
         rotation_matrix, _ = cv2.Rodrigues(rvec)
         extrinsics = assemble_extrinsics(rotation_matrix, tvec)
