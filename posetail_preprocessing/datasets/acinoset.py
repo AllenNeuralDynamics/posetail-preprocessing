@@ -16,7 +16,7 @@ class AcinosetDataset(BaseDataset):
     def __init__(self, dataset_path, dataset_outpath,
                  dataset_name = 'acinoset', keypoints_path = None, 
                  filter_kernel_size = 11, filter_thresh = None, 
-                 filter_percentile = 90):
+                 filter_percentile = 95):
         super().__init__(dataset_path, dataset_outpath)
 
         self.dataset_name = dataset_name
@@ -30,7 +30,7 @@ class AcinosetDataset(BaseDataset):
 
     def load_calibration(self, calib_path, cam_names = None):
         ''' 
-        NOTE: calib_data also contains 'camera_resolution'
+        calib_data also contains 'camera_resolution'
         '''
         # mapping from the number of cameras in the given setup 
         # to the names of the associated cameras (varies in this
@@ -50,19 +50,17 @@ class AcinosetDataset(BaseDataset):
 
             params = camera_params[i]
 
-            intrinsics = np.array(params['k']).transpose()
-            rotation_matrix = np.array(params['r']).transpose()
+            intrinsics = np.array(params['k'])
+            rotation_matrix = np.array(params['r'])
             tvec = np.array(params['t'])
-
+            
             extrinsics = assemble_extrinsics(rotation_matrix, tvec)
-            rvec = cv2.Rodrigues(rotation_matrix)[0].T[0]
 
             distortions = np.array([
                 params['d'][0][0],
                 params['d'][1][0],
                 params['d'][2][0],
-                params['d'][3][0], 
-                0.0])
+                params['d'][3][0]])
 
             intrinsics_dict[cam_name] = intrinsics.tolist()
             extrinsics_dict[cam_name] = extrinsics.tolist()
@@ -71,16 +69,19 @@ class AcinosetDataset(BaseDataset):
         return intrinsics_dict, extrinsics_dict, distortions_dict
 
 
-    def load_pose3d(self, data_path):
+    def load_pose3d(self, data_path, alignment_path):
 
         # load in the 3d coords
         data = pd.read_pickle(data_path)
+        alignment_params = io.load_json(alignment_path)
+        n_frames = alignment_params['end_frame'] - alignment_params['start_frame']
         coords = []
 
         for pos in data['positions']: 
             coords.append(pos)
 
         pose3d = np.expand_dims(coords, axis = 0) # (n_subjects, time, keypoints, 3)
+        pose3d = pose3d[:, :n_frames, :, :]
 
         # load the keypoints if provided 
         if self.keypoints_path is not None:
@@ -88,7 +89,7 @@ class AcinosetDataset(BaseDataset):
         else:
             keypoints = [f'kpt{i}' for i in range(pose3d.shape[2])]
 
-        # filter out inaccurate keypoints 
+        # filter out keypoints 
         pose3d = filter_coords(
             coords = pose3d, 
             kernel_size = self.kernel_size, 
@@ -243,6 +244,12 @@ class AcinosetDataset(BaseDataset):
                 print(f'skipping... could not find {data_path}')
                 continue
 
+            # check if the alignment path exists
+            alignment_path = os.path.join(trial_path, 'fte_pw', 'reconstruction_params.json')
+            if not os.path.isfile(alignment_path): 
+                print(f'skipping... could not find {alignment_path}')
+                continue
+
             cap = cv2.VideoCapture(cam_videos[0])
             n_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
             cap.release()
@@ -315,22 +322,29 @@ class AcinosetDataset(BaseDataset):
                 print(f'skipping... could not find {data_path}')
                 continue
 
+            # check if the alignment path exists
+            alignment_path = os.path.join(trial_path, 'fte_pw', 'reconstruction_params.json')
+            if not os.path.isfile(alignment_path): 
+                print(f'skipping... could not find {alignment_path}')
+                continue
+
             # load and format the 3d annotations
             trial_outpath = os.path.join(outpath, trial)
-            pose_dict = self.load_pose3d(data_path)
+            pose_dict = self.load_pose3d(data_path, alignment_path)
             pose_dict = self._subset_pose_dict(pose_dict, n_frames = split_frames)
             io.save_npz(pose_dict, trial_outpath, fname = 'pose3d')
 
             if split == 'test':  
                 # for test set, save as videos
                 video_info = self._process_subject_test(
-                    cam_videos, trial_outpath, cam_names)
+                    alignment_path, cam_videos, 
+                    trial_outpath, cam_names)
             else: 
                 # for train and validation sets, deserialize the camera videos 
                 # and save as images  
                 video_info = self._process_subject_train(
-                    cam_videos, trial_outpath, cam_names, 
-                    split_frames = split_frames)
+                    alignment_path, cam_videos, trial_outpath, 
+                    cam_names, split_frames = split_frames)
 
             cam_dict = {
                 'intrinsic_matrices': intrinsics, 
@@ -345,8 +359,13 @@ class AcinosetDataset(BaseDataset):
                          fname = 'metadata.yaml')
             
 
-    def _process_subject_train(self, cam_videos, trial_outpath, cam_names, 
-                               split_frames = None):
+    def _process_subject_train(self, alignment_path, cam_videos, trial_outpath,
+                               cam_names, split_frames = None):
+
+        # get params to align video
+        alignment_params = io.load_json(alignment_path)
+        start = alignment_params['start_frame']
+        end = alignment_params['end_frame']
 
         # deserialize the camera videos and save as images 
         cam_height_dict = {}
@@ -357,10 +376,11 @@ class AcinosetDataset(BaseDataset):
         for cam_name, cam_video in zip(cam_names, cam_videos): 
             
             cam_outpath = os.path.join(trial_outpath, 'img', cam_name)
-            video_info = io.deserialize_video(
+            video_info = io.deserialize_video_with_alignment(
                 cam_video, 
                 cam_outpath, 
-                start_frame = 0, 
+                start_frame = start,
+                end_frame = end, 
                 debug_ix = split_frames)
 
             cam_height_dict[cam_name] = video_info['camera_heights']
@@ -377,7 +397,13 @@ class AcinosetDataset(BaseDataset):
 
         return video_info
     
-    def _process_subject_test(self, cam_videos, trial_outpath, cam_names): 
+    def _process_subject_test(self, alignment_path, cam_videos, trial_outpath, cam_names): 
+
+        # get params to align video
+        alignment_params = io.load_json(alignment_path)
+        start_frame = alignment_params['start_frame']
+        end_frame = alignment_params['end_frame']
+        n_frames = end_frame - start_frame
 
         cam_height_dict = {}
         cam_width_dict = {}
@@ -398,7 +424,27 @@ class AcinosetDataset(BaseDataset):
 
             # copy video to desired location
             cam_video_outpath = os.path.join(outpath, f'{cam_name}.mp4')
-            os.symlink(cam_video, cam_video_outpath)
+
+            # generate a subset of the video to match the given 
+            # start and end frame (aligns with coordinates)
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            writer = cv2.VideoWriter(cam_video_outpath, fourcc, video_info['fps'], 
+                                    (video_info['camera_widths'], video_info['camera_heights']))
+
+            cap = cv2.VideoCapture(cam_video)
+            cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+
+            for i in range(n_frames): 
+
+                ret, frame = cap.read()
+                if not ret: 
+                    break
+
+                writer.write(frame)
+            
+            cap.release()
+            writer.release()
+            
 
         video_info = {
             'cam_heights': cam_height_dict, 
