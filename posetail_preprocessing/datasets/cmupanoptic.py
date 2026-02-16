@@ -2,11 +2,11 @@ import glob
 import json
 import os 
 import cv2
-import shutil
 
 import numpy as np
 import pandas as pd 
 
+from itertools import chain
 from tqdm import tqdm
 
 from posetail_preprocessing.datasets import BaseDataset
@@ -53,60 +53,69 @@ class CMUPanopticDataset(BaseDataset):
 
     def load_pose3d(self, session_path):
 
-        pose_kpts_path = os.path.join(self.keypoints_path, 'keypoints_pose_cmupanoptic.yaml')
-        face_kpts_path = os.path.join(self.keypoints_path, 'keypoints_face_cmupanoptic.yaml')
-        hand_kpts_path = os.path.join(self.keypoints_path, 'keypoints_hand_cmupanoptic.yaml')
+        all_subject_ids = set()
+        all_data_paths = []
+        all_kpts = []
+        kpt_types = []
+        start_frames = []
+        n_frames = []
 
-        pose_kpts = io.load_yaml(pose_kpts_path)['keypoints']
-        face_kpts = io.load_yaml(face_kpts_path)['keypoints']
-        hand_kpts = io.load_yaml(hand_kpts_path)['keypoints']
+        kpt_dict = {
+            'pose': 'hdPose3d_stage1_coco19', 
+            'hand': 'hdHand3d', 
+            'face': 'hdFace3d'}
 
-        left_hand_kpts = ['l_' + kpt for kpt in hand_kpts]
-        right_hand_kpts = ['r_' + kpt for kpt in hand_kpts]
+        for kpt_type, kpt_folder in kpt_dict.items(): 
 
-        # aggregate 3d pose files
-        n_kpts_pose = len(pose_kpts)
-        pose_data_prefix = os.path.join(session_path, 'hdPose3d_stage1_coco19', 'hd')
-        pose_data_paths = sorted(glob.glob(os.path.join(pose_data_prefix, '*.json')))
-        ids_pose, n_frames_pose, start_frame_pose = self._get_unique_ids(pose_data_paths, kpt_type = 'pose')
+            # check if kpt_type exists for the given session
+            data_prefix = os.path.join(session_path, kpt_folder)
+            if not os.path.exists(data_prefix): 
+                continue
 
-        # aggregate 3d face files
-        n_kpts_face = len(face_kpts)
-        face_data_prefix = os.path.join(session_path, 'hdFace3d')
-        face_data_paths = sorted(glob.glob(os.path.join(face_data_prefix, '*.json')))
-        ids_face, n_frames_face, start_frame_face = self._get_unique_ids(face_data_paths, kpt_type = 'face')
+            kpts_path = os.path.join(self.keypoints_path, f'keypoints_{kpt_type}_cmupanoptic.yaml')
+            kpts = io.load_yaml(kpts_path)['keypoints']
+            if kpt_type == 'hand': 
+                left_hand_kpts = ['l_' + kpt for kpt in kpts]
+                right_hand_kpts = ['r_' + kpt for kpt in kpts]
+                kpts = left_hand_kpts + right_hand_kpts
 
-        # aggregate 3d hand files
-        n_kpts_hand = len(left_hand_kpts) + len(right_hand_kpts)
-        hand_data_prefix = os.path.join(session_path, 'hdHand3d')
-        hand_data_paths = sorted(glob.glob(os.path.join(hand_data_prefix, '*.json')))
-        ids_hand, n_frames_hand, start_frame_hand = self._get_unique_ids(hand_data_paths, kpt_type = 'hand')
+            # aggregate 3d files
+            data_paths = sorted(glob.glob(os.path.join(data_prefix, '*.json')))
+            if len(data_paths) == 0: 
+                data_paths = sorted(glob.glob(os.path.join(data_prefix, 'hd', '*.json')))
+
+            subject_ids, num_frames, start_frame = self._get_unique_ids(data_paths, kpt_type = kpt_type)
+
+            all_subject_ids.update(subject_ids)
+            all_data_paths.append(data_paths)
+            all_kpts.append(kpts)
+            kpt_types.append(kpt_type)
+            start_frames.append(start_frame)
+            n_frames.append(num_frames)
+
+        start_frames = np.array(start_frames)
+        n_frames = np.array(n_frames)
 
         # determine unique ids and frames, then populate 3d coords
-        ids = ids_pose.union(ids_face, ids_hand)
-        ids_to_index = dict(zip(ids, np.arange(len(ids))))
+        ids_to_ix = dict(zip(all_subject_ids, np.arange(len(all_subject_ids))))
+        coords = []
 
-        # populate the coords for pose, face, and hand
-        coords_pose = self._populate_coords(pose_data_paths, 
-            ids_to_index, n_frames_pose, n_kpts_pose, kpt_type = 'pose')
+        for i, kpt_type in enumerate(kpt_types):
 
-        coords_face = self._populate_coords(face_data_paths, 
-            ids_to_index, n_frames_face, n_kpts_face, kpt_type = 'face')
+            coords3d = self._populate_coords(all_data_paths[i], 
+                ids_to_ix, n_frames[i], 
+                n_kpts = len(all_kpts[i]), kpt_type = kpt_type)
 
-        coords_hand = self._populate_coords(hand_data_paths, 
-            ids_to_index, n_frames_hand, n_kpts_hand, kpt_type = 'hand')
-
+            coords.append(coords3d)
+    
         # determine frame overlap to align temporally
-        coords = [coords_pose, coords_face, coords_hand]
-        start_frames = np.array([start_frame_pose, start_frame_face, start_frame_hand])
-        n_frames = np.array([n_frames_pose, n_frames_face, n_frames_hand])
-
-        coords_pose_aligned, coords_face_aligned, coords_hand_aligned = self._align_coords(coords, start_frames, n_frames)
+        coords_aligned, common_start, common_end = self._align_coords(coords, start_frames, n_frames)
 
         # combine body, face, and hand keypoints to construct pose dict
-        subject_coords = np.concatenate((coords_pose_aligned, coords_face_aligned, coords_hand_aligned), axis = 2)
-        kpts = pose_kpts + face_kpts + left_hand_kpts + right_hand_kpts
-        pose3d_dict = {'pose': subject_coords, 'keypoints': kpts, 'ids': ids}
+        all_coords = np.concatenate((coords_aligned), axis = 2)
+        all_kpts_flat = list(chain.from_iterable(all_kpts))
+        pose3d_dict = {'pose': all_coords, 'keypoints': all_kpts_flat, 'ids': all_subject_ids, 
+                       'common_start': common_start, 'common_end': common_end}
 
         return pose3d_dict
 
@@ -135,11 +144,11 @@ class CMUPanopticDataset(BaseDataset):
 
         self.split_frames_dict = split_frames_dict
 
-        session_splits = [{'160906_pizza1'},  {'170915_office1'}, {'170407_office2'}]
+        session_splits = [{'160906_pizza1'}, {'170915_office1'}, {'170407_office2'}]
         splits = ['val', 'test', None]
 
-        for i, subjects in enumerate(session_splits):
-            self.metadata.loc[self.metadata['subject'].isin(subjects), 'split'] = splits[i]
+        for i, sessions in enumerate(session_splits):
+            self.metadata.loc[self.metadata['session'].isin(sessions), 'split'] = splits[i]
 
         if split_dict: 
             for split, n in split_dict.items():
@@ -170,13 +179,7 @@ class CMUPanopticDataset(BaseDataset):
             for session in tqdm(sessions, desc = split): 
 
                 outpath = os.path.join(self.dataset_outpath, split, session, 'trial')
-                os.makedirs(outpath, exist_ok = True)
                 self._process_session(outpath, session, split)
-
-                 # clean up any empty directories
-                if len(os.listdir(outpath)) == 0:
-                    # print(f'removing: {outpath}')
-                    os.rmdir(outpath)
 
 
     def _get_start_frame(self, data_path): 
@@ -249,10 +252,6 @@ class CMUPanopticDataset(BaseDataset):
 
     def _populate_coords(self, data_paths, ids_dict, n_frames, n_kpts, kpt_type = 'pose'):
 
-        # determine whether paths are for the hand, 
-        # face, or pose
-        assert kpt_type in ['pose', 'face', 'hand']
-
         subject_key = 'people'
         if kpt_type == 'pose':
             subject_key = 'bodies'
@@ -293,7 +292,7 @@ class CMUPanopticDataset(BaseDataset):
             coords_subset = coords_subset[:, offset:offset + common_n_frames, :, :]
             coords_aligned.append(coords_subset)
 
-        return coords_aligned
+        return coords_aligned, common_start, common_end
     
 
     def _get_sessions(self, session_path, session): 
@@ -306,7 +305,7 @@ class CMUPanopticDataset(BaseDataset):
 
         # NOTE: will subsample cameras at dataset generation
         video_paths = sorted(glob.glob(os.path.join(session_path, 'hdVideos', '*.mp4')))
-        pose_path = os.path.join(session_path, 'hdPose3d_stage1_coco19', 'hd')
+        pose_path = os.path.join(session_path, 'hdPose3d_stage1_coco19')
         hand_path = os.path.join(session_path, 'hdHand3d')
         face_path = os.path.join(session_path, 'hdFace3d')
 
@@ -355,7 +354,11 @@ class CMUPanopticDataset(BaseDataset):
         # load calibration data
         calib_path = os.path.join(session_path, f'calibration_{session}.json')
         intrinsics, extrinsics, distortions, _ = self.load_calibration(calib_path)
-        cam_names = list(intrinsics.keys())
+
+        # extract cam names depending on the available videos 
+        cam_videos = glob.glob(os.path.join(session_path, 'hdVideos', '*.mp4'))
+        cam_names = [os.path.splitext(os.path.basename(cam_video))[0].split('_', 1)[1]
+                     for cam_video in cam_videos]
 
         # skip if metadata excludes it 
         process = True
@@ -363,37 +366,51 @@ class CMUPanopticDataset(BaseDataset):
         if df.empty or not df['include'].values[0]: 
             process = False
 
+        # skip if missing all annotations (24 sessions)
+        pose_path_exists = os.path.exists(os.path.join(session_path, 'hdPose3d_stage1_coco19'))
+        face_path_exists = os.path.exists(os.path.join(session_path, 'hdHand3d'))
+        hand_path_exists = os.path.exists(os.path.join(session_path, 'hdFace3d'))
+        
+        if not pose_path_exists and not face_path_exists and not hand_path_exists:
+            # print(f'no keypoint data for session {session}')
+            process = False
+
         if process: 
+
+            # process the session
+            os.makedirs(outpath, exist_ok = True)
+
             # load and format the 3d annotations
             pose_dict = self.load_pose3d(session_path)
+            common_start = pose_dict.pop('common_start')
+            common_end = pose_dict.pop('common_end')
             pose_dict = self._subset_pose_dict(pose_dict, n_frames = split_frames)
             io.save_npz(pose_dict, outpath, fname = 'pose3d')
 
-        # put videos/frames in the desired format
-        if split == 'test':  
-            # for test set, save as videos
-            video_info = self._process_session_test(
-                session_path, outpath, cam_names)
-        else:
-            # for train and validation sets, deserialize the camera videos 
-            # and save as images  
-            video_info = self._process_session_train(
-                session_path, outpath, cam_names)
+            # put videos/frames in the desired format
+            if split == 'test':  
+                # for test set, save as videos
+                video_info = self._process_session_test( # TODO: add common start frame
+                    session_path, outpath, cam_names)
+            else:
+                # for train and validation sets, deserialize the camera videos 
+                # and save as images  
+                video_info = self._process_session_train( # TODO: add common start frame
+                    session_path, outpath, cam_names, split_frames, common_start)
 
-        cam_dict = {
-            'intrinsic_matrices': intrinsics, 
-            'extrinsic_matrices': extrinsics, 
-            'distortion_matrices': distortions,
-            'num_cameras': len(intrinsics)}
-        cam_dict.update(video_info)
+            cam_dict = {
+                'intrinsic_matrices': intrinsics, 
+                'extrinsic_matrices': extrinsics, 
+                'distortion_matrices': distortions,
+                'num_cameras': len(intrinsics)}
+            cam_dict.update(video_info)
 
-        # save camera metadata
-        io.save_yaml(data = cam_dict, outpath = outpath, 
-                fname = 'metadata.yaml')
-        
+            # save camera metadata
+            io.save_yaml(data = cam_dict, outpath = outpath, 
+                    fname = 'metadata.yaml')
 
     def _process_session_train(self, session_path, trial_outpath, cam_names,
-                               split_frames = None):
+                               split_frames = None, start_frame = None):
 
         # copy image folders to new outpath
         cam_height_dict = {}
@@ -403,13 +420,13 @@ class CMUPanopticDataset(BaseDataset):
 
         for cam_name in cam_names:
 
-            cam_video_path = os.path.join(session_path, 'hdVideos', f'hd_00_{str(cam_name).zfill(2)}.mp4')
+            cam_video_path = os.path.join(session_path, 'hdVideos', f'hd_{cam_name}.mp4')
             cam_outpath = os.path.join(trial_outpath, 'img', cam_name)
 
             video_info = io.deserialize_video(
                 cam_video_path, 
                 cam_outpath, 
-                start_frame = 0, 
+                start_frame = start_frame, 
                 debug_ix = split_frames)
 
         cam_height_dict[cam_name] = video_info['camera_heights']
