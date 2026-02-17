@@ -6,7 +6,7 @@ import toml
 import yaml
 
 import numpy as np
-
+import subprocess
 
 def get_dirs(path): 
 
@@ -89,8 +89,10 @@ def get_video_info(video_path):
         'camera_heights': int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)),
         'camera_widths': int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
         'num_frames': int(cap.get(cv2.CAP_PROP_FRAME_COUNT)),
-        'fps': int(cap.get(cv2.CAP_PROP_FPS))
+        'fps': cap.get(cv2.CAP_PROP_FPS)
     }
+
+    cap.release()
 
     return video_info
 
@@ -104,7 +106,7 @@ def deserialize_video(video_path, outpath, start_frame = 0, debug_ix = None, zfi
         'camera_heights': int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)),
         'camera_widths': int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
         'num_frames': int(cap.get(cv2.CAP_PROP_FRAME_COUNT)),
-        'fps': int(cap.get(cv2.CAP_PROP_FPS))
+        'fps': cap.get(cv2.CAP_PROP_FPS)
     }
 
     frame_ix = start_frame
@@ -127,6 +129,41 @@ def deserialize_video(video_path, outpath, start_frame = 0, debug_ix = None, zfi
 
     return video_info
 
+def deserialize_video_ffmpeg(video_path, outpath, start_number=0,
+                             start_at=0, debug_ix=None, zfill=6):
+    os.makedirs(outpath, exist_ok=True)
+
+
+    video_info = get_video_info(video_path)
+
+    start_at_time = start_at / float(video_info['fps'])  
+    
+    
+    # Build ffmpeg command
+    ffmpeg_cmd = [
+        'ffmpeg',
+        '-hide_banner', '-loglevel', 'error', '-stats',
+        '-ss', str(start_at_time),
+        '-i', video_path,
+        '-start_number', str(start_number),
+        '-q:v', '1'
+    ]
+    
+    # Add frame limit if debug_ix is specified
+    if debug_ix:
+        ffmpeg_cmd.extend(['-vframes', str(debug_ix)])
+    
+    # Output pattern with zfill
+    output_pattern = os.path.join(outpath, f'%0{zfill}d.jpg')
+    ffmpeg_cmd.append(output_pattern)
+
+    print(ffmpeg_cmd)
+    
+    # Run ffmpeg
+    subprocess.run(ffmpeg_cmd, check=True, capture_output=False)
+    
+    return video_info
+
 
 def save_frame_synced(video_path, outpath, frame_ix, 
                       frame_ix_synced = None, zfill = 6):
@@ -141,7 +178,7 @@ def save_frame_synced(video_path, outpath, frame_ix,
         'camera_heights': int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)),
         'camera_widths': int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
         'num_frames': int(cap.get(cv2.CAP_PROP_FRAME_COUNT)), 
-        'fps': int(cap.get(cv2.CAP_PROP_FPS))
+        'fps': cap.get(cv2.CAP_PROP_FPS)
     }
 
     cap.set(cv2.CAP_PROP_POS_FRAMES, frame_ix)
