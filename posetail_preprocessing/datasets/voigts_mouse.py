@@ -176,7 +176,7 @@ class VoigtsMouseDataset(BaseDataset):
                 cam_outpath = os.path.join(outpath, 'img', cam_name)
                 os.makedirs(cam_outpath, exist_ok = True)
         
-                io.deserialize_video_ffmpeg(
+                io.deserialize_video(
                     cam_video_path, cam_outpath,
                     start_at = start_frame, debug_ix = num_frames)
             

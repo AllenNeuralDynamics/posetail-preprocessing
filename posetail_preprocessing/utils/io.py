@@ -97,7 +97,9 @@ def get_video_info(video_path):
     return video_info
 
 
-def deserialize_video(video_path, outpath, start_frame = 0, debug_ix = None, zfill = 6):
+def deserialize_video(video_path, outpath, start_frame = 0,
+                      start_at = 0, 
+                      debug_ix = None, zfill = 6):
 
     os.makedirs(outpath, exist_ok = True)
     cap = cv2.VideoCapture(video_path)
@@ -109,7 +111,11 @@ def deserialize_video(video_path, outpath, start_frame = 0, debug_ix = None, zfi
         'fps': cap.get(cv2.CAP_PROP_FPS)
     }
 
-    frame_ix = start_frame
+    print(video_path)
+    print(start_at, debug_ix)
+
+    
+    frame_ix = 0
 
     while True:
 
@@ -118,11 +124,16 @@ def deserialize_video(video_path, outpath, start_frame = 0, debug_ix = None, zfi
         if not ret:
             break
 
-        out_path = os.path.join(outpath, f'{str(frame_ix).zfill(zfill)}.jpg')
+        if frame_ix < start_at:
+            frame_ix += 1
+            continue
+        
+        outname = str(frame_ix + start_frame - start_at).zfill(zfill) + '.jpg'
+        out_path = os.path.join(outpath, outname)
         cv2.imwrite(out_path, frame)
         frame_ix += 1
 
-        if debug_ix and frame_ix - start_frame == debug_ix: 
+        if debug_ix and frame_ix - start_at >= debug_ix: 
             break
 
     cap.release()
@@ -131,6 +142,9 @@ def deserialize_video(video_path, outpath, start_frame = 0, debug_ix = None, zfi
 
 def deserialize_video_ffmpeg(video_path, outpath, start_number=0,
                              start_at=0, debug_ix=None, zfill=6):
+    """NOTE: This is faster than deserialize_video
+    BUT may not give as reliably synced frames for some videos (!!)"""
+    
     os.makedirs(outpath, exist_ok=True)
 
 
@@ -143,10 +157,11 @@ def deserialize_video_ffmpeg(video_path, outpath, start_number=0,
     ffmpeg_cmd = [
         'ffmpeg',
         '-hide_banner', '-loglevel', 'error', '-stats',
-        '-ss', str(start_at_time),
         '-i', video_path,
+        '-ss', str(start_at_time),
         '-start_number', str(start_number),
-        '-q:v', '1'
+        '-q:v', '1',
+        '-vsync', '0'
     ]
     
     # Add frame limit if debug_ix is specified

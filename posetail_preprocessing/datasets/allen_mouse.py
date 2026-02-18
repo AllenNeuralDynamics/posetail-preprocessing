@@ -185,7 +185,7 @@ class AllenMouseDataset(BaseDataset):
         print(self.metadata['subject'].unique())
         print(self.metadata['trial'].unique())
         self.metadata.loc[self.metadata['subject'] == sub, 'split'] = 'test'
-        self.metadata.loc[self.metadata['trial'] == '2025-04-21T11_49_55'] = 'val'
+        self.metadata.loc[self.metadata['trial'] == '2025-04-21T11_49_55', 'split'] = 'val'
             
         # only select 2 validation samples to use
         if split_dict: 
