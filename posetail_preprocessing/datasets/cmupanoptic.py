@@ -16,11 +16,12 @@ from posetail_preprocessing.utils import io, assemble_extrinsics
 class CMUPanopticDataset(BaseDataset): 
 
     def __init__(self, dataset_path, dataset_outpath, keypoints_path,
-                 dataset_name = 'cmupanoptic'):
+                 dataset_name = 'cmupanoptic', conf_thresh = None):
         super().__init__(dataset_path, dataset_outpath)
 
         self.dataset_name = dataset_name
-        self.keypoints_path = keypoints_path    
+        self.keypoints_path = keypoints_path 
+        self.conf_thresh = conf_thresh # filters keypoints based on confidence threshold   
     
     def load_calibration(self, calib_path):
 
@@ -37,7 +38,7 @@ class CMUPanopticDataset(BaseDataset):
 
         for cam_data in hd_cam_data: 
 
-            cam_name = str(int(cam_data['name'].split('_')[1]))
+            cam_name = cam_data['name']
 
             tvec = np.array(cam_data['t'])
             rotation_matrix = cam_data['R']
@@ -104,7 +105,9 @@ class CMUPanopticDataset(BaseDataset):
 
             coords3d = self._populate_coords(all_data_paths[i], 
                 ids_to_ix, n_frames[i], 
-                n_kpts = len(all_kpts[i]), kpt_type = kpt_type)
+                n_kpts = len(all_kpts[i]), 
+                kpt_type = kpt_type,
+                conf_thresh = self.conf_thresh)
 
             coords.append(coords3d)
     
@@ -115,7 +118,7 @@ class CMUPanopticDataset(BaseDataset):
         all_coords = np.concatenate((coords_aligned), axis = 2)
         all_kpts_flat = list(chain.from_iterable(all_kpts))
         pose3d_dict = {'pose': all_coords, 'keypoints': all_kpts_flat, 'ids': all_subject_ids, 
-                       'common_start': common_start, 'common_end': common_end}
+                       'start_frame': common_start, 'end_frame': common_end}
 
         return pose3d_dict
 
@@ -220,15 +223,23 @@ class CMUPanopticDataset(BaseDataset):
         return ids, n_frames, start_frame
 
 
-    def _get_pose3d(self, subject, n_kpts, kpt_type):
+    def _get_pose3d(self, subject, n_kpts, kpt_type, conf_thresh = None):
         
         if kpt_type == 'pose': 
-            pose = np.array(subject['joints19'])
-            pose3d = pose.reshape(n_kpts, 4)[:, :3]
+            pose = np.array(subject['joints19']).reshape(n_kpts, 4)
+            pose3d = pose[:, :3]
+
+            if conf_thresh: 
+                conf = pose[:, 3]
+                pose3d = pose3d[conf > conf_thresh]
 
         elif kpt_type == 'face':
-            pose = np.array(subject['face70']['landmarks'])
-            pose3d = pose.reshape(n_kpts, 3)
+            pose = np.array(subject['face70']['landmarks']).reshape(n_kpts, 3)
+            pose3d = pose[:, :3]
+            
+            if conf_thresh: 
+                conf = pose[:, 3]
+                pose3d = pose3d[conf > conf_thresh]
 
         else: # kpt_type == 'hand' 
             assert n_kpts % 2 == 0
@@ -250,7 +261,8 @@ class CMUPanopticDataset(BaseDataset):
         return pose3d
 
 
-    def _populate_coords(self, data_paths, ids_dict, n_frames, n_kpts, kpt_type = 'pose'):
+    def _populate_coords(self, data_paths, ids_dict, n_frames, n_kpts, 
+                         kpt_type = 'pose', conf_thresh = None):
 
         subject_key = 'people'
         if kpt_type == 'pose':
@@ -270,7 +282,7 @@ class CMUPanopticDataset(BaseDataset):
             for subject in subjects: 
                 id = subject['id']
                 index = ids_dict[id]
-                pose3d = self._get_pose3d(subject, n_kpts, kpt_type)
+                pose3d = self._get_pose3d(subject, n_kpts, kpt_type, conf_thresh = conf_thresh)
                 coords[index, i, :, :] = pose3d 
 
         return coords
@@ -382,21 +394,23 @@ class CMUPanopticDataset(BaseDataset):
 
             # load and format the 3d annotations
             pose_dict = self.load_pose3d(session_path)
-            common_start = pose_dict.pop('common_start')
-            common_end = pose_dict.pop('common_end')
+            common_start = pose_dict.pop('start_frame')
+            common_end = pose_dict.pop('end_frame')
             pose_dict = self._subset_pose_dict(pose_dict, n_frames = split_frames)
             io.save_npz(pose_dict, outpath, fname = 'pose3d')
 
             # put videos/frames in the desired format
             if split == 'test':  
                 # for test set, save as videos
-                video_info = self._process_session_test( # TODO: add common start frame
-                    session_path, outpath, cam_names)
+                video_info = self._process_session_test(
+                    session_path, outpath, cam_names, 
+                    common_start, common_end)
             else:
                 # for train and validation sets, deserialize the camera videos 
                 # and save as images  
-                video_info = self._process_session_train( # TODO: add common start frame
-                    session_path, outpath, cam_names, split_frames, common_start)
+                video_info = self._process_session_train(
+                    session_path, outpath, cam_names, 
+                    split_frames, common_start, common_end)
 
             cam_dict = {
                 'intrinsic_matrices': intrinsics, 
@@ -410,7 +424,7 @@ class CMUPanopticDataset(BaseDataset):
                     fname = 'metadata.yaml')
 
     def _process_session_train(self, session_path, trial_outpath, cam_names,
-                               split_frames = None, start_frame = None):
+                               split_frames = None, start_frame = None, end_frame = None):
 
         # copy image folders to new outpath
         cam_height_dict = {}
@@ -423,10 +437,11 @@ class CMUPanopticDataset(BaseDataset):
             cam_video_path = os.path.join(session_path, 'hdVideos', f'hd_{cam_name}.mp4')
             cam_outpath = os.path.join(trial_outpath, 'img', cam_name)
 
-            video_info = io.deserialize_video(
+            video_info = io.deserialize_video_with_alignment(
                 cam_video_path, 
                 cam_outpath, 
-                start_frame = start_frame, 
+                start_frame = start_frame,
+                end_frame = end_frame, 
                 debug_ix = split_frames)
 
         cam_height_dict[cam_name] = video_info['camera_heights']
@@ -444,15 +459,17 @@ class CMUPanopticDataset(BaseDataset):
         return video_info
     
 
-    def _process_session_test(self, session_path, trial_outpath, cam_names):
+    def _process_session_test(self, session_path, trial_outpath, cam_names, 
+                              start_frame = None, end_frame = None):
 
         cam_height_dict = {}
         cam_width_dict = {}
         num_frames = []
         fps = []
+        n_frames = end_frame - start_frame
 
         outpath = os.path.join(trial_outpath, 'vid')
-        os.path.makedirs(outpath, exist_ok = True)
+        os.makedirs(outpath, exist_ok = True)
 
         for cam_name in cam_names: 
 
@@ -466,8 +483,25 @@ class CMUPanopticDataset(BaseDataset):
             num_frames.append(video_info['num_frames'])
             fps.append(video_info['fps'])
 
-            # copy video to desired location
-            os.symlink(cam_video_path, cam_video_outpath)
+            # generate a subset of the video to match the given 
+            # start and end frame (aligns with coordinates)
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            writer = cv2.VideoWriter(cam_video_outpath, fourcc, video_info['fps'], 
+                                    (video_info['camera_widths'], video_info['camera_heights']))
+
+            cap = cv2.VideoCapture(cam_video_path)
+            cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+
+            for i in range(n_frames): 
+
+                ret, frame = cap.read()
+                if not ret: 
+                    break
+
+                writer.write(frame)
+            
+            cap.release()
+            writer.release()
 
         video_info = {
             'cam_heights': cam_height_dict, 
