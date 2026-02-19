@@ -100,24 +100,27 @@ class CMUPanopticDataset(BaseDataset):
         # determine unique ids and frames, then populate 3d coords
         ids_to_ix = dict(zip(all_subject_ids, np.arange(len(all_subject_ids))))
         coords = []
+        vis = []
 
         for i, kpt_type in enumerate(kpt_types):
 
-            coords3d = self._populate_coords(all_data_paths[i], 
+            coords3d, visibilities = self._populate_coords(all_data_paths[i], 
                 ids_to_ix, n_frames[i], 
                 n_kpts = len(all_kpts[i]), 
                 kpt_type = kpt_type,
                 conf_thresh = self.conf_thresh)
 
             coords.append(coords3d)
+            vis.append(visibilities)
     
         # determine frame overlap to align temporally
-        coords_aligned, common_start, common_end = self._align_coords(coords, start_frames, n_frames)
+        coords_aligned, vis_aligned, common_start, common_end = self._align_coords(coords, vis, start_frames, n_frames)
 
         # combine body, face, and hand keypoints to construct pose dict
         all_coords = np.concatenate((coords_aligned), axis = 2)
+        all_vis = np.concatenate((vis_aligned), axis = 2)
         all_kpts_flat = list(chain.from_iterable(all_kpts))
-        pose3d_dict = {'pose': all_coords, 'keypoints': all_kpts_flat, 'ids': all_subject_ids, 
+        pose3d_dict = {'pose': all_coords, 'vis': all_vis, 'keypoints': all_kpts_flat, 'ids': all_subject_ids, 
                        'start_frame': common_start, 'end_frame': common_end}
 
         return pose3d_dict
@@ -223,11 +226,31 @@ class CMUPanopticDataset(BaseDataset):
         return ids, n_frames, start_frame
 
 
-    def _get_pose3d(self, subject, n_kpts, kpt_type, conf_thresh = None):
+    def _get_visibilities(self, vis, n_kpts, n_cameras = 31): 
+
+        visibilities = np.zeros((n_kpts, n_cameras), dtype = np.uint8)
+
+        # populate per-camera visibilities according to the annotations
+        for i, cams in enumerate(vis): 
+            visibilities[i, cams] = 1
+
+        return visibilities
+    
+    def _make_visibilities(self, pose3d, n_kpts, n_cameras = 31): 
+
+        # approximate visibilities based on what 3d coords aren't nan
+        visibilities = np.zeros((n_kpts, n_cameras), dtype = np.uint8)
+        mask = np.isnan(np.sum(pose3d, axis = -1))
+        visibilities[mask] = 0
+
+        return visibilities
+
+    def _get_pose3d(self, subject, n_kpts, kpt_type, conf_thresh = None, n_cameras = 31):
         
         if kpt_type == 'pose': 
             pose = np.array(subject['joints19']).reshape(n_kpts, 4)
             pose3d = pose[:, :3]
+            vis = self._make_visibilities(pose3d, n_kpts, n_cameras)
 
             if conf_thresh: 
                 conf = pose[:, 3]
@@ -236,6 +259,7 @@ class CMUPanopticDataset(BaseDataset):
         elif kpt_type == 'face':
             pose = np.array(subject['face70']['landmarks']).reshape(n_kpts, 3)
             pose3d = pose[:, :3]
+            vis = self._get_visibilities(subject['face70']['visibility'], n_kpts, n_cameras)
             
             if conf_thresh: 
                 conf = pose[:, 3]
@@ -243,33 +267,42 @@ class CMUPanopticDataset(BaseDataset):
 
         else: # kpt_type == 'hand' 
             assert n_kpts % 2 == 0
+            n_kpts_half = n_kpts // 2 
             
             if 'left_hand' in subject: 
                 pose_left = np.array(subject['left_hand']['landmarks'])
+                vis_left = self._get_visibilities(subject['left_hand']['visibility'],
+                                             n_kpts = n_kpts_half, 
+                                             n_cameras = n_cameras)
             else: 
-                pose_left = np.zeros(3 * n_kpts // 2) * np.nan
+                pose_left = np.zeros(3 * n_kpts_half) * np.nan
+                vis_left = self._make_visibilities(pose_left, n_kpts_half, n_cameras)
 
             if 'right_hand' in subject:
                 pose_right = np.array(subject['right_hand']['landmarks'])
+                vis_right = self._get_visibilities(subject['right_hand']['visibility'], n_kpts_half, n_cameras)
             else: 
-                pose_right = np.zeros(3 * n_kpts // 2) * np.nan
+                pose_right = np.zeros(3 * n_kpts_half) * np.nan
+                vis_right = self._make_visibilities(pose_right, n_kpts_half, n_cameras)
 
-            pose_left = pose_left.reshape(n_kpts // 2, 3)
-            pose_right = pose_right.reshape(n_kpts // 2, 3)
+            pose_left = pose_left.reshape(n_kpts_half, 3)
+            pose_right = pose_right.reshape(n_kpts_half, 3)
             pose3d = np.vstack((pose_left, pose_right))
+            vis = np.vstack((vis_left, vis_right))
 
-        return pose3d
+        return pose3d, vis 
 
 
     def _populate_coords(self, data_paths, ids_dict, n_frames, n_kpts, 
-                         kpt_type = 'pose', conf_thresh = None):
+                         n_cams = 31, kpt_type = 'pose', conf_thresh = None):
 
         subject_key = 'people'
         if kpt_type == 'pose':
             subject_key = 'bodies'
 
-        # populate the coords from each subject
+        # populate the coords and vis from each subject
         coords = np.zeros((len(ids_dict), n_frames, n_kpts, 3)) * np.nan
+        vis = np.zeros((len(ids_dict), n_frames, n_kpts, n_cams))
 
         for i, data_path in enumerate(data_paths): 
 
@@ -282,13 +315,14 @@ class CMUPanopticDataset(BaseDataset):
             for subject in subjects: 
                 id = subject['id']
                 index = ids_dict[id]
-                pose3d = self._get_pose3d(subject, n_kpts, kpt_type, conf_thresh = conf_thresh)
+                pose3d, visibilities = self._get_pose3d(subject, n_kpts, kpt_type, conf_thresh = conf_thresh)
                 coords[index, i, :, :] = pose3d 
+                vis[index, i, :, :] = visibilities
 
-        return coords
+        return coords, vis
 
 
-    def _align_coords(self, coords, start_frames, n_frames):
+    def _align_coords(self, coords, vis, start_frames, n_frames):
 
         end_frames = start_frames + n_frames
         common_start = np.max(start_frames)
@@ -297,14 +331,21 @@ class CMUPanopticDataset(BaseDataset):
         offsets = common_start - start_frames
 
         coords_aligned = []
+        vis_aligned = []
 
-        for i, coords_subset in enumerate(coords): 
+        for i in range(len(coords)): 
 
+            coords_subset = coords[i]
+            vis_subset = vis[i]
             offset = offsets[i]
-            coords_subset = coords_subset[:, offset:offset + common_n_frames, :, :]
-            coords_aligned.append(coords_subset)
 
-        return coords_aligned, common_start, common_end
+            coords_subset = coords_subset[:, offset:offset + common_n_frames, :, :]
+            vis_subset = vis_subset[:, offset:offset + common_n_frames, :, :]
+
+            coords_aligned.append(coords_subset)
+            vis_aligned.append(vis_subset)
+
+        return coords_aligned, vis_aligned, common_start, common_end
     
 
     def _get_sessions(self, session_path, session): 
@@ -444,16 +485,16 @@ class CMUPanopticDataset(BaseDataset):
                 end_frame = end_frame, 
                 debug_ix = split_frames)
 
-        cam_height_dict[cam_name] = video_info['camera_heights']
-        cam_width_dict[cam_name] = video_info['camera_widths']
-        num_frames.append(video_info['num_frames'])
-        fps.append(video_info['fps'])
+            cam_height_dict[cam_name] = video_info['camera_heights']
+            cam_width_dict[cam_name] = video_info['camera_widths']
+            num_frames.append(video_info['num_frames'])
+            fps.append(video_info['fps'])
 
         video_info = {
             'cam_heights': cam_height_dict, 
             'cam_widths': cam_width_dict, 
-            'num_frames': num_frames,
-            'fps': fps
+            'num_frames': min(num_frames),
+            'fps': min(fps)
         }
 
         return video_info

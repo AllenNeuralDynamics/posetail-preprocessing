@@ -77,7 +77,7 @@ def generate_acinoset(prefix, out_prefix, kpt_prefix,
     generates the preprocessed acinoset dataset
 
     train: 20540 frames (all)
-    val: 2 videos * 16  frames = 32 frames 
+    val: 1 video * 32 frames = 32 frames 
     test: 932 frames
     '''
 
@@ -99,8 +99,8 @@ def generate_acinoset(prefix, out_prefix, kpt_prefix,
 
     # generate full training dataset (21k), full test data
     splits = {'train', 'val', 'test'}
-    split_dict = {'train': None, 'val': 2} # number of videos to sample from the dataset
-    split_frames_dict = {'train': None, 'val': 16} # number of consecutive frames per video to sample 
+    split_dict = {'train': None, 'val': 1} # number of videos to sample from the dataset
+    split_frames_dict = {'train': None, 'val': 32} # number of consecutive frames per video to sample 
 
     if debug: 
         splits, split_dict, split_frames_dict = update_subsampling(splits)
@@ -406,7 +406,7 @@ if __name__ == '__main__':
     # prefix = '/groups/karashchuk/karashchuklab/animal-datasets'
     # out_prefix = '/groups/karashchuk/karashchuklab/animal-datasets-processed/posetail-finetuning'
     prefix = '/data/animal-datasets'
-    out_prefix = '/data/'
+    out_prefix = '/data/animal-datasets-processed/posetail-finetuning'
 
     os.makedirs(out_prefix, exist_ok = True)
     kpt_prefix = '/home/ruppk2@hhmi.org/posetail-preprocessing/posetail_preprocessing/keypoints'
@@ -420,7 +420,7 @@ if __name__ == '__main__':
     # generate_kubric_multiview(prefix, out_prefix, debug = debug)
 
     # finetuning datasets 
-    # generate_acinoset(prefix, oust_prefix, kpt_prefix = kpt_prefix, random_state = random_state, debug = debug)
+    generate_acinoset(prefix, out_prefix, kpt_prefix = kpt_prefix, random_state = random_state, debug = debug)
     # generate_anipose_fly(prefix, out_prefix, random_state = random_state, debug = debug)
     # generate_rat7m(prefix, out_prefix, random_state = random_state, debug = debug)
     # generate_pairr24m(prefix, out_prefix, random_state = random_state, debug = debug)
@@ -429,5 +429,5 @@ if __name__ == '__main__':
     # generate_cmupanoptic(prefix, out_prefix, kpt_prefix = kpt_prefix, random_state = random_state, debug = debug)
 
     # purely test datasets
-    generate_cmupanoptic3dgs(prefix, out_prefix, random_state = random_state)
+    # generate_cmupanoptic3dgs(prefix, out_prefix, random_state = random_state)
     # generate_dex_ycb(prefix, out_prefix, random_state = random_state) 

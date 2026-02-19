@@ -135,15 +135,14 @@ def deserialize_video_with_alignment(video_path, outpath, start_frame,
     os.makedirs(outpath, exist_ok = True)
     cap = cv2.VideoCapture(video_path)
     cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+    n_frames = end_frame - start_frame
 
     video_info = {
         'camera_heights': int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)),
         'camera_widths': int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
-        'num_frames': int(cap.get(cv2.CAP_PROP_FRAME_COUNT)),
+        'num_frames': int(n_frames),
         'fps': int(cap.get(cv2.CAP_PROP_FPS))
     }
-
-    n_frames = end_frame - start_frame
 
     for i in range(n_frames): 
 
