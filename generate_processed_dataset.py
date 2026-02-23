@@ -165,14 +165,15 @@ def generate_cmupanoptic(prefix, out_prefix, kpt_prefix,
         dataset_outpath = dataset_outpath, 
         dataset_name = dataset_name, 
         keypoints_path = kpt_prefix, 
-        conf_thresh = 0.1)
+        conf_thresh = None, 
+        overwrite = False)
 
     df = dataset.generate_metadata()
 
     # sample 60k training frames
-    splits = {'train', 'val', 'test'}
-    split_dict = {'train': 3, 'val': 2} # number of videos to sample from the dataset
-    split_frames_dict = {'train': 10, 'val': 16} # number of consecutive frames per video to sample 
+    splits = {'train'}
+    split_dict = {'train': None, 'val': 1} # number of videos to sample from the dataset
+    split_frames_dict = {'train': 1000, 'val': 32} # number of consecutive frames per video to sample 
 
     if debug: 
         splits, split_dict, split_frames_dict = update_subsampling(splits)
@@ -403,10 +404,10 @@ def generate_rat7m(prefix, out_prefix, dataset_name = 'rat7m',
 if __name__ == '__main__': 
 
     # raw and processed data locations
-    # prefix = '/groups/karashchuk/karashchuklab/animal-datasets'
-    # out_prefix = '/groups/karashchuk/karashchuklab/animal-datasets-processed/posetail-finetuning'
-    prefix = '/data/animal-datasets'
-    out_prefix = '/data/animal-datasets-processed/posetail-finetuning'
+    prefix = '/groups/karashchuk/karashchuklab/animal-datasets'
+    out_prefix = '/groups/karashchuk/karashchuklab/animal-datasets-processed/posetail-finetuning'
+    # prefix = '/data/animal-datasets'
+    # out_prefix = '/data/animal-datasets-processed/posetail-finetuning'
 
     os.makedirs(out_prefix, exist_ok = True)
     kpt_prefix = '/home/ruppk2@hhmi.org/posetail-preprocessing/posetail_preprocessing/keypoints'
@@ -420,13 +421,13 @@ if __name__ == '__main__':
     # generate_kubric_multiview(prefix, out_prefix, debug = debug)
 
     # finetuning datasets 
-    generate_acinoset(prefix, out_prefix, kpt_prefix = kpt_prefix, random_state = random_state, debug = debug)
+    # generate_acinoset(prefix, out_prefix, kpt_prefix = kpt_prefix, random_state = random_state, debug = debug)
     # generate_anipose_fly(prefix, out_prefix, random_state = random_state, debug = debug)
     # generate_rat7m(prefix, out_prefix, random_state = random_state, debug = debug)
     # generate_pairr24m(prefix, out_prefix, random_state = random_state, debug = debug)
     # generate_3dpop(prefix, out_prefix, random_state = random_state, debug = debug)
     # generate_3dzef(prefix, out_prefix, random_state = random_state, debug = debug)
-    # generate_cmupanoptic(prefix, out_prefix, kpt_prefix = kpt_prefix, random_state = random_state, debug = debug)
+    generate_cmupanoptic(prefix, out_prefix, kpt_prefix = kpt_prefix, random_state = random_state, debug = debug)
 
     # purely test datasets
     # generate_cmupanoptic3dgs(prefix, out_prefix, random_state = random_state)

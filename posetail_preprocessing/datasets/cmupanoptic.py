@@ -16,13 +16,15 @@ from posetail_preprocessing.utils import io, assemble_extrinsics
 class CMUPanopticDataset(BaseDataset): 
 
     def __init__(self, dataset_path, dataset_outpath, keypoints_path,
-                 dataset_name = 'cmupanoptic', conf_thresh = None):
+                 dataset_name = 'cmupanoptic', conf_thresh = None, 
+                 overwrite = True):
         super().__init__(dataset_path, dataset_outpath)
 
         self.dataset_name = dataset_name
         self.keypoints_path = keypoints_path 
         self.conf_thresh = conf_thresh # filters keypoints based on confidence threshold   
-    
+        self.overwrite = overwrite
+
     def load_calibration(self, calib_path):
 
         intrinsics_dict = {}
@@ -73,6 +75,11 @@ class CMUPanopticDataset(BaseDataset):
             if not os.path.exists(data_prefix): 
                 continue
 
+            data_paths = sorted(glob.glob(os.path.join(data_prefix, '*.json')))
+            alt_data_paths = sorted(glob.glob(os.path.join(data_prefix, '*.json')))
+            if len(data_paths) == 0 or len(alt_data_paths) == 0:
+                continue
+
             kpts_path = os.path.join(self.keypoints_path, f'keypoints_{kpt_type}_cmupanoptic.yaml')
             kpts = io.load_yaml(kpts_path)['keypoints']
             if kpt_type == 'hand': 
@@ -81,9 +88,8 @@ class CMUPanopticDataset(BaseDataset):
                 kpts = left_hand_kpts + right_hand_kpts
 
             # aggregate 3d files
-            data_paths = sorted(glob.glob(os.path.join(data_prefix, '*.json')))
             if len(data_paths) == 0: 
-                data_paths = sorted(glob.glob(os.path.join(data_prefix, 'hd', '*.json')))
+                data_paths = alt_data_paths
 
             subject_ids, num_frames, start_frame = self._get_unique_ids(data_paths, kpt_type = kpt_type)
 
@@ -188,12 +194,12 @@ class CMUPanopticDataset(BaseDataset):
                 self._process_session(outpath, session, split)
 
 
-    def _get_start_frame(self, data_path): 
+    def _get_frame_number(self, data_path): 
 
         base_name = os.path.splitext(os.path.basename(data_path))[0]
-        start_frame = int(base_name.split('_')[1].lstrip('hd'))
+        frame = int(base_name.split('_')[1].lstrip('hd'))
 
-        return start_frame
+        return frame
 
 
     def _get_unique_ids(self, data_paths, kpt_type = 'pose'):
@@ -207,28 +213,37 @@ class CMUPanopticDataset(BaseDataset):
             subject_key = 'bodies'
 
         # find the unique ids and the number of frames
-        start_frame = self._get_start_frame(data_paths[0])
+        start_frame = self._get_frame_number(data_paths[0])
+        end_frame = self._get_frame_number(data_paths[-1])
+        n_frames = (end_frame - start_frame) + 1
+
         ids = set()
 
         for i, data_path in enumerate(data_paths): 
 
-            data = io.load_json(data_path)
-            bodies = data[subject_key]
-
-            if len(bodies) == 0: 
+            if not os.path.exists(data_path): 
                 continue
 
-            for body in bodies: 
-                ids.add(body['id'])
+            try: 
+                data = io.load_json(data_path)
+                bodies = data[subject_key]
 
-        n_frames = i + 1
+                if len(bodies) == 0: 
+                    continue
+
+                for body in bodies: 
+                    ids.add(body['id'])
+
+            except (FileNotFoundError, json.JSONDecodeError) as e: 
+                print(f'{e}: skipping frame {i}')
+                continue
 
         return ids, n_frames, start_frame
 
 
     def _get_visibilities(self, vis, n_kpts, n_cameras = 31): 
 
-        visibilities = np.zeros((n_kpts, n_cameras), dtype = np.uint8)
+        visibilities = np.zeros((n_kpts, n_cameras))
 
         # populate per-camera visibilities according to the annotations
         for i, cams in enumerate(vis): 
@@ -236,12 +251,12 @@ class CMUPanopticDataset(BaseDataset):
 
         return visibilities
     
-    def _make_visibilities(self, pose3d, n_kpts, n_cameras = 31): 
+    def _make_visibilities(self, pose3d, n_kpts, n_cameras = 31, fill_value = 0): 
 
         # approximate visibilities based on what 3d coords aren't nan
-        visibilities = np.zeros((n_kpts, n_cameras), dtype = np.uint8)
+        visibilities = np.zeros((n_kpts, n_cameras))
         mask = np.isnan(np.sum(pose3d, axis = -1))
-        visibilities[mask] = 0
+        visibilities[mask] = fill_value
 
         return visibilities
 
@@ -250,9 +265,9 @@ class CMUPanopticDataset(BaseDataset):
         if kpt_type == 'pose': 
             pose = np.array(subject['joints19']).reshape(n_kpts, 4)
             pose3d = pose[:, :3]
-            vis = self._make_visibilities(pose3d, n_kpts, n_cameras)
+            vis = self._make_visibilities(pose3d, n_kpts, n_cameras, fill_value = np.nan)
 
-            if conf_thresh: 
+            if conf_thresh and pose.shape[-1] == 4: 
                 conf = pose[:, 3]
                 pose3d = pose3d[conf > conf_thresh]
 
@@ -260,10 +275,6 @@ class CMUPanopticDataset(BaseDataset):
             pose = np.array(subject['face70']['landmarks']).reshape(n_kpts, 3)
             pose3d = pose[:, :3]
             vis = self._get_visibilities(subject['face70']['visibility'], n_kpts, n_cameras)
-            
-            if conf_thresh: 
-                conf = pose[:, 3]
-                pose3d = pose3d[conf > conf_thresh]
 
         else: # kpt_type == 'hand' 
             assert n_kpts % 2 == 0
@@ -305,19 +316,28 @@ class CMUPanopticDataset(BaseDataset):
         vis = np.zeros((len(ids_dict), n_frames, n_kpts, n_cams))
 
         for i, data_path in enumerate(data_paths): 
-
-            data = io.load_json(data_path)
-            subjects = data[subject_key]
-
-            if len(subjects) == 0: 
+ 
+            # a file is occasionally missing
+            if not os.path.exists(data_path): 
                 continue
 
-            for subject in subjects: 
-                id = subject['id']
-                index = ids_dict[id]
-                pose3d, visibilities = self._get_pose3d(subject, n_kpts, kpt_type, conf_thresh = conf_thresh)
-                coords[index, i, :, :] = pose3d 
-                vis[index, i, :, :] = visibilities
+            try: 
+                data = io.load_json(data_path)
+                subjects = data[subject_key]
+
+                if len(subjects) == 0: 
+                    continue
+
+                for subject in subjects: 
+                    id = subject['id']
+                    index = ids_dict[id]
+                    pose3d, visibilities = self._get_pose3d(subject, n_kpts, kpt_type, conf_thresh = conf_thresh)
+                    coords[index, i, :, :] = pose3d 
+                    vis[index, i, :, :] = visibilities
+
+            except (FileNotFoundError, json.JSONDecodeError) as e: 
+                print(f'{e}: skipping frame {i}')
+                continue
 
         return coords, vis
 
@@ -428,12 +448,19 @@ class CMUPanopticDataset(BaseDataset):
             # print(f'no keypoint data for session {session}')
             process = False
 
+        # skip if this session has already been processed and exists
+        # at the output location
+        if not self.overwrite and os.path.exists(os.path.join(outpath, 'metadata.yaml')):
+            print(f'{session} already processed... skipping')
+            process = False 
+
         if process: 
 
             # process the session
             os.makedirs(outpath, exist_ok = True)
 
             # load and format the 3d annotations
+            print(session)
             pose_dict = self.load_pose3d(session_path)
             common_start = pose_dict.pop('start_frame')
             common_end = pose_dict.pop('end_frame')

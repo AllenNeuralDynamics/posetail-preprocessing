@@ -460,8 +460,8 @@ class Rat7MDataset(BaseDataset):
             fps.append(video_info['fps'])
 
         video_info = {
-            'cam_heights': cam_height_dict, 
-            'cam_widths': cam_width_dict, 
+            'camera_heights': cam_height_dict, 
+            'camera_widths': cam_width_dict, 
             'num_frames': num_frames,
             'fps': fps
         }
