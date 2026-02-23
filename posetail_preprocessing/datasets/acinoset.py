@@ -350,7 +350,8 @@ class AcinosetDataset(BaseDataset):
                 'intrinsic_matrices': intrinsics, 
                 'extrinsic_matrices': extrinsics, 
                 'distortion_matrices': distortions,
-                'num_cameras': len(intrinsics)
+                'num_cameras': len(intrinsics), 
+                'cam_type': 'fisheye'
             }
             cam_dict.update(video_info) # height, width, n_frames, fps
 
