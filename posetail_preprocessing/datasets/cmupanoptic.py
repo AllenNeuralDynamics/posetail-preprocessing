@@ -518,8 +518,8 @@ class CMUPanopticDataset(BaseDataset):
             fps.append(video_info['fps'])
 
         video_info = {
-            'cam_heights': cam_height_dict, 
-            'cam_widths': cam_width_dict, 
+            'camera_heights': cam_height_dict, 
+            'camera_widths': cam_width_dict, 
             'num_frames': min(num_frames),
             'fps': min(fps)
         }
@@ -572,8 +572,8 @@ class CMUPanopticDataset(BaseDataset):
             writer.release()
 
         video_info = {
-            'cam_heights': cam_height_dict, 
-            'cam_widths': cam_width_dict, 
+            'camera_heights': cam_height_dict, 
+            'camera_widths': cam_width_dict, 
             'num_frames': min(num_frames),
             'fps': min(fps)
         }
