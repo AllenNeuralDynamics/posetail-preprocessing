@@ -38,9 +38,17 @@ class CMUPanopticDataset(BaseDataset):
         cam_data = data['cameras']
         hd_cam_data = [d for d in cam_data if d['type'] == 'hd']
 
+        # check which cameras actually have videos 
+        video_path = os.path.join(os.path.dirname(calib_path), 'hdVideos')
+        video_names = glob.glob(os.path.join(video_path, '*.mp4'))
+        available_cams = set([os.path.splitext(os.path.basename(video_name))[0].lstrip('hd_') for video_name in video_names])
+
         for cam_data in hd_cam_data: 
 
             cam_name = cam_data['name']
+            if cam_name not in available_cams: 
+                print(f'[metadata generation] skipping camera {cam_name}... video not available')
+                continue
 
             tvec = np.array(cam_data['t'])
             rotation_matrix = cam_data['R']
