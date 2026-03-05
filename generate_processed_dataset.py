@@ -171,7 +171,7 @@ def generate_cmupanoptic(prefix, out_prefix, kpt_prefix,
     df = dataset.generate_metadata()
 
     # sample 60k training frames
-    splits = {'train'}
+    splits = {'test', 'val'}
     split_dict = {'train': None, 'val': 1} # number of videos to sample from the dataset
     split_frames_dict = {'train': 1000, 'val': 32} # number of consecutive frames per video to sample 
 
@@ -427,8 +427,8 @@ if __name__ == '__main__':
     # generate_pairr24m(prefix, out_prefix, random_state = random_state, debug = debug)
     # generate_3dpop(prefix, out_prefix, random_state = random_state, debug = debug)
     # generate_3dzef(prefix, out_prefix, random_state = random_state, debug = debug)
-    generate_cmupanoptic(prefix, out_prefix, kpt_prefix = kpt_prefix, random_state = random_state, debug = debug)
+    # generate_cmupanoptic(prefix, out_prefix, kpt_prefix = kpt_prefix, random_state = random_state, debug = debug)
 
     # purely test datasets
     # generate_cmupanoptic3dgs(prefix, out_prefix, random_state = random_state)
-    # generate_dex_ycb(prefix, out_prefix, random_state = random_state) 
+    generate_dex_ycb(prefix, out_prefix, random_state = random_state) 

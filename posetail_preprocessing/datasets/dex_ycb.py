@@ -53,12 +53,9 @@ class DexYCBDataset(BaseDataset):
 
     def load_pose3d(self, data_path, eps = 1e-6):
 
-        # filter coordinates based on movement threshold
+        # load keypoints 
         data = np.load(data_path)
         coords = np.array(data['tracks_3d'])
-        total_movement = reduce(np.abs(np.diff(coords, axis = 0)), 't n r -> n', 'sum')
-        movement_check = total_movement > eps
-        coords = coords[:, movement_check]
         pose3d = np.expand_dims(coords, axis = 0) # (n_subjects, time, keypoints, 3)
 
         # load visibilities 
