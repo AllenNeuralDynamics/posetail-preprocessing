@@ -15,13 +15,15 @@ from posetail_preprocessing.utils import io, assemble_extrinsics
 
 class CMUPanopticDataset(BaseDataset): 
 
-    def __init__(self, dataset_path, dataset_outpath, keypoints_path,
-                 dataset_name = 'cmupanoptic', conf_thresh = None, 
-                 overwrite = True):
+    def __init__(self, dataset_path, dataset_outpath, 
+                 keypoints_path, scheme_path = None, 
+                 dataset_name = 'cmupanoptic', 
+                 conf_thresh = None, overwrite = True):
         super().__init__(dataset_path, dataset_outpath)
 
         self.dataset_name = dataset_name
-        self.keypoints_path = keypoints_path 
+        self.keypoints_path = keypoints_path
+        self.scheme_path = scheme_path 
         self.conf_thresh = conf_thresh # filters keypoints based on confidence threshold   
         self.overwrite = overwrite
 
@@ -134,8 +136,14 @@ class CMUPanopticDataset(BaseDataset):
         all_coords = np.concatenate((coords_aligned), axis = 2)
         all_vis = np.concatenate((vis_aligned), axis = 2)
         all_kpts_flat = list(chain.from_iterable(all_kpts))
-        pose3d_dict = {'pose': all_coords, 'vis': all_vis, 'keypoints': all_kpts_flat, 'ids': all_subject_ids, 
-                       'start_frame': common_start, 'end_frame': common_end}
+        pose3d_dict = {
+            'pose': all_coords, 
+            'vis': all_vis, 
+            'keypoints': all_kpts_flat, 
+            'ids': all_subject_ids, 
+            'start_frame': common_start, 
+            'end_frame': common_end
+        }
 
         return pose3d_dict
 

@@ -17,10 +17,12 @@ from posetail_preprocessing.utils import io, assemble_extrinsics
 class AniposeFlyDataset(BaseDataset): 
 
     def __init__(self, dataset_path, dataset_outpath, 
-                 dataset_name = 'anipose_fly', error_thresh = None):
+                 dataset_name = 'anipose_fly', scheme_path = None, 
+                 error_thresh = None):
         super().__init__(dataset_path, dataset_outpath)
 
         self.dataset_name = dataset_name
+        self.scheme_path = scheme_path
         self.error_thresh = error_thresh
 
     def load_calibration(self, calib_path):

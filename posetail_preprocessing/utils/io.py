@@ -50,6 +50,16 @@ def load_yaml(path):
     return data
 
 
+def load_toml(path): 
+    ''' 
+    safely loads data from a toml file
+    ''' 
+    with open(path, 'r') as toml_file:
+        data = toml.load(toml_file)
+
+    return data
+
+
 def save_json(data, outpath, fname):
 
     os.makedirs(outpath, exist_ok = True) 

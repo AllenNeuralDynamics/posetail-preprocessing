@@ -1,0 +1,13 @@
+scheme = [
+    ['HeadF', 'HeadB'],
+    ['HeadF', 'HeadL'],
+    ['HeadB', 'SpineF'],
+    ['SpineF', 'SpineM'],
+    ['SpineM', 'SpineL'],
+    ['SpineL', 'HipL'],
+    ['SpineL', 'HipR'],
+    ['SpineF', 'ShoulderL'],
+    ['SpineF', 'ShoulderR'],
+    # ['SpineM', 'Offset1'],
+    # ['SpineM', 'Offset2']
+]

@@ -14,13 +14,17 @@ from posetail_preprocessing.utils import io, assemble_extrinsics
 class PairR24MDataset(BaseDataset): 
 
     def __init__(self, dataset_path, dataset_outpath, 
-                 dataset_name = 'pairr24m',
+                 dataset_name = 'pairr24m', scheme_path = None, 
                  keypoint_format = 'absolutePosition'):
         super().__init__(dataset_path, dataset_outpath)
 
         self.dataset_name = dataset_name
         self.keypoint_format = keypoint_format # absolutePosition or relativePosition
-    
+        self.scheme_path = scheme_path 
+
+        assert self.keypoint_format == 'absolutePosition' or self.keypoint_format == 'relativePosition'
+
+
     def load_calibration(self, calib_path):
 
         calib_paths = sorted(glob.glob(os.path.join(calib_path, '*.json')))
@@ -53,6 +57,7 @@ class PairR24MDataset(BaseDataset):
             distortions_dict[cam_name] = distortions.tolist()
 
         return intrinsics_dict, extrinsics_dict, distortions_dict
+
 
     def load_pose3d(self, data_path, fmt = 'absolutePosition', skip_id = None):
 
@@ -130,6 +135,7 @@ class PairR24MDataset(BaseDataset):
                 self._select_subset_for_split(split = split, n = n, random_state = random_state)
 
         return self.metadata
+
 
     def generate_dataset(self, splits = None): 
 

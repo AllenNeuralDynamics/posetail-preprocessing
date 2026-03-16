@@ -15,10 +15,11 @@ from posetail_preprocessing.utils import io, assemble_extrinsics
 class DukeMouseDataset(BaseDataset): 
 
     def __init__(self, dataset_path, dataset_outpath, 
-                 dataset_name = 'duke_mouse'):
+                 dataset_name = 'duke_mouse', scheme_path = None):
         super().__init__(dataset_path, dataset_outpath)
 
         self.dataset_name = dataset_name
+        self.scheme_path = scheme_path 
 
 
     def load_calibration(self, calib_path):

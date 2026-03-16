@@ -15,11 +15,13 @@ from posetail_preprocessing.utils import io, assemble_extrinsics
 
 class POPDataset(BaseDataset): 
 
-    def __init__(self, dataset_path, dataset_outpath, dataset_name = '3dpop'):
+    def __init__(self, dataset_path, dataset_outpath, 
+                 scheme_path, dataset_name = '3dpop'):
         super().__init__(dataset_path, dataset_outpath)
 
         self.dataset_path = dataset_path
         self.dataset_name = dataset_name
+        self.scheme_path = scheme_path
     
 
     def load_calibration(self, calib_path):

@@ -1,0 +1,20 @@
+scheme = [
+    ['HeadF', 'HeadB'],
+    ['HeadF', 'HeadL'],
+    ['HeadB', 'SpineF'],
+    ['HeadL', 'SpineF'],
+    ['SpineF', 'SpineM'],
+    ['SpineM', 'SpineL'],
+    ['SpineL', 'HipL'],
+    ['SpineL', 'HipR'],
+    ['ShoulderL', 'ElbowL'],
+    ['ElbowL', 'ArmL'],
+    ['ShoulderR', 'ElbowR'],
+    ['ElbowR', 'ArmR'],
+    ['SpineF', 'ShoulderL'],
+    ['SpineF', 'ShoulderR'],
+    ['HipL', 'KneeL'],
+    ['KneeL', 'ShinL'],
+    ['HipR', 'KneeR'],
+    ['KneeR', 'ShinR']
+]

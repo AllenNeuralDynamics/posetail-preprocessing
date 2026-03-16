@@ -16,16 +16,19 @@ from posetail_preprocessing.utils import io, assemble_extrinsics, filter_coords
 class Rat7MDataset(BaseDataset): 
 
     def __init__(self, dataset_path, dataset_outpath, 
-                 dataset_name = 'rat7m', filter_kernel_size = 11, 
-                 filter_thresh = None, filter_percentile = 90):
+                 dataset_name = 'rat7m', scheme_path = None, 
+                 filter_kernel_size = 11, filter_thresh = None, 
+                 filter_percentile = 90):
         super().__init__(dataset_path, dataset_outpath)
 
         self.dataset_name = dataset_name
+        self.scheme_path = scheme_path
 
         # parameters for filtering ground truth keypoints
         self.kernel_size = filter_kernel_size
         self.thresh = filter_thresh
         self.percentile = filter_percentile
+    
     
     def load_calibration(self, calib_path):
 
@@ -91,7 +94,7 @@ class Rat7MDataset(BaseDataset):
         pose3d_dict = {'pose': pose3d, 'keypoints': bodyparts}
 
         return pose3d_dict
-
+    
 
     def generate_metadata(self):
 
@@ -342,7 +345,7 @@ class Rat7MDataset(BaseDataset):
                 'intrinsic_matrices': intrinsics, 
                 'extrinsic_matrices': extrinsics, 
                 'distortion_matrices': distortions,
-                'num_cameras': len(intrinsics)
+                'num_cameras': len(intrinsics),
             }
             calib_dict.update(video_info)
 

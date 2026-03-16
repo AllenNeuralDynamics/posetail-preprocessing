@@ -14,13 +14,15 @@ from posetail_preprocessing.utils import io, assemble_extrinsics, filter_coords
 class AcinosetDataset(BaseDataset): 
 
     def __init__(self, dataset_path, dataset_outpath,
-                 dataset_name = 'acinoset', keypoints_path = None, 
+                 dataset_name = 'acinoset', 
+                 scheme_path = None, keypoints_path = None, 
                  filter_kernel_size = 11, filter_thresh = None, 
                  filter_percentile = 95):
         super().__init__(dataset_path, dataset_outpath)
 
         self.dataset_name = dataset_name
         self.keypoints_path = keypoints_path
+        self.scheme_path = scheme_path 
 
         # parameters for filtering ground truth keypoints
         self.kernel_size = filter_kernel_size
