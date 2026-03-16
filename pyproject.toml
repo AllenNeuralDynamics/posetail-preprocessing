@@ -10,9 +10,10 @@ dependencies = [
     "easydict==1.13",
     "json5==0.12.1",
     "opencv-python==4.9.0.80",
-    "toml==0.10.2"
-]
-requires-python = ">=3.10"
+    "toml==0.10.2",
+    "einops>=0.8.2,<0.9",
+    "pyyaml>=6.0.3,<7"]
+requires-python = ">=3.6,<3.10"
 description = "a preprocessing library to curate training data from various open source datasets for a posetail model"
 readme = "README.md"
 license = {text = "BSD-3-Clause"}
@@ -27,3 +28,12 @@ classifiers = [
 
 [project.urls]
 Repository = "https://github.com/AllenNeuralDynamics/posetail-preprocessing"
+
+[tool.pixi.workspace]
+channels = ["conda-forge"]
+platforms = ["linux-64"]
+
+[tool.pixi.pypi-dependencies]
+posetail-preprocessing = { path = ".", editable = true }
+
+[tool.pixi.tasks]

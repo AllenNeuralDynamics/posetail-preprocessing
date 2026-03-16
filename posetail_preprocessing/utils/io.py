@@ -6,7 +6,7 @@ import toml
 import yaml
 
 import numpy as np
-
+import subprocess
 
 def get_dirs(path): 
 
@@ -99,13 +99,17 @@ def get_video_info(video_path):
         'camera_heights': int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)),
         'camera_widths': int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
         'num_frames': int(cap.get(cv2.CAP_PROP_FRAME_COUNT)),
-        'fps': int(cap.get(cv2.CAP_PROP_FPS))
+        'fps': cap.get(cv2.CAP_PROP_FPS)
     }
+
+    cap.release()
 
     return video_info
 
 
-def deserialize_video(video_path, outpath, start_frame = 0, debug_ix = None, zfill = 6):
+def deserialize_video(video_path, outpath, start_frame = 0,
+                      start_at = 0, 
+                      debug_ix = None, zfill = 6):
 
     os.makedirs(outpath, exist_ok = True)
     cap = cv2.VideoCapture(video_path)
@@ -114,10 +118,14 @@ def deserialize_video(video_path, outpath, start_frame = 0, debug_ix = None, zfi
         'camera_heights': int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)),
         'camera_widths': int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
         'num_frames': int(cap.get(cv2.CAP_PROP_FRAME_COUNT)),
-        'fps': int(cap.get(cv2.CAP_PROP_FPS))
+        'fps': cap.get(cv2.CAP_PROP_FPS)
     }
 
-    frame_ix = start_frame
+    print(video_path)
+    print(start_at, debug_ix)
+
+    
+    frame_ix = 0
 
     while True:
 
@@ -126,15 +134,59 @@ def deserialize_video(video_path, outpath, start_frame = 0, debug_ix = None, zfi
         if not ret:
             break
 
-        out_path = os.path.join(outpath, f'{str(frame_ix).zfill(zfill)}.jpg')
+        if frame_ix < start_at:
+            frame_ix += 1
+            continue
+        
+        outname = str(frame_ix + start_frame - start_at).zfill(zfill) + '.jpg'
+        out_path = os.path.join(outpath, outname)
         cv2.imwrite(out_path, frame)
         frame_ix += 1
 
-        if debug_ix and frame_ix - start_frame == debug_ix: 
+        if debug_ix and frame_ix - start_at >= debug_ix: 
             break
 
     cap.release()
 
+    return video_info
+
+def deserialize_video_ffmpeg(video_path, outpath, start_number=0,
+                             start_at=0, debug_ix=None, zfill=6):
+    """NOTE: This is faster than deserialize_video
+    BUT may not give as reliably synced frames for some videos (!!)"""
+    
+    os.makedirs(outpath, exist_ok=True)
+
+
+    video_info = get_video_info(video_path)
+
+    start_at_time = start_at / float(video_info['fps'])  
+    
+    
+    # Build ffmpeg command
+    ffmpeg_cmd = [
+        'ffmpeg',
+        '-hide_banner', '-loglevel', 'error', '-stats',
+        '-i', video_path,
+        '-ss', str(start_at_time),
+        '-start_number', str(start_number),
+        '-q:v', '1',
+        '-vsync', '0'
+    ]
+    
+    # Add frame limit if debug_ix is specified
+    if debug_ix:
+        ffmpeg_cmd.extend(['-vframes', str(debug_ix)])
+    
+    # Output pattern with zfill
+    output_pattern = os.path.join(outpath, f'%0{zfill}d.jpg')
+    ffmpeg_cmd.append(output_pattern)
+
+    print(ffmpeg_cmd)
+    
+    # Run ffmpeg
+    subprocess.run(ffmpeg_cmd, check=True, capture_output=False)
+    
     return video_info
 
 
@@ -185,7 +237,7 @@ def save_frame_synced(video_path, outpath, frame_ix,
         'camera_heights': int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)),
         'camera_widths': int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
         'num_frames': int(cap.get(cv2.CAP_PROP_FRAME_COUNT)), 
-        'fps': int(cap.get(cv2.CAP_PROP_FPS))
+        'fps': cap.get(cv2.CAP_PROP_FPS)
     }
 
     cap.set(cv2.CAP_PROP_POS_FRAMES, frame_ix)

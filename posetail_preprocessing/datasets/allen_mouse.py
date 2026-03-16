@@ -13,16 +13,41 @@ from tqdm import tqdm
 from posetail_preprocessing.datasets import BaseDataset
 from posetail_preprocessing.utils import io, assemble_extrinsics
 
+import re
 
-class AniposeFlyDataset(BaseDataset): 
+# functions from anipose 
+def true_basename(fname):
+    basename = os.path.basename(fname)
+    basename = os.path.splitext(basename)[0]
+    return basename
+
+
+def get_cam_name(config, fname):
+    basename = true_basename(fname)
+
+    cam_regex = config['triangulation']['cam_regex']
+    match = re.search(cam_regex, basename)
+
+    if not match:
+        return None
+    else:
+        name = match.groups()[0]
+        return name.strip()
+
+def get_video_name(config, fname):
+    basename = true_basename(fname)
+    cam_regex = config['triangulation']['cam_regex']
+    vidname = re.sub(cam_regex, '', basename)
+    return vidname.strip()
+
+
+class AllenMouseDataset(BaseDataset): 
 
     def __init__(self, dataset_path, dataset_outpath, 
-                 dataset_name = 'anipose_fly', scheme_path = None, 
-                 error_thresh = None):
+                 dataset_name = 'allen-mouse', error_thresh = None):
         super().__init__(dataset_path, dataset_outpath)
 
         self.dataset_name = dataset_name
-        self.scheme_path = scheme_path
         self.error_thresh = error_thresh
 
     def load_calibration(self, calib_path):
@@ -32,7 +57,7 @@ class AniposeFlyDataset(BaseDataset):
         distortions_dict = {}
         offset_dict = {}
 
-        calib_file = os.path.join(calib_path, 'Calibration', 'calibration.toml')
+        calib_file = os.path.join(calib_path, 'calibration-videos', 'calibration.toml')
         config_file = os.path.join(calib_path, 'config.toml')
 
         with open(calib_file, 'r') as f:
@@ -127,7 +152,7 @@ class AniposeFlyDataset(BaseDataset):
         
         # subjects = io.get_dirs(self.dataset_path)
         os.chdir(self.dataset_path)
-        subjects = glob.glob('*/*/Fly *')
+        subjects = glob.glob('*_tracked_v3')
         rows = []
 
         for subject in subjects: 
@@ -149,15 +174,19 @@ class AniposeFlyDataset(BaseDataset):
         
         self.split_frames_dict = split_frames_dict
 
-        subject_splits = [{'grant/11.29.22/Fly 2_0'},
-                          {'grant/11.29.22/Fly 1_0',
-                           'grant/11.29.22/Fly 4_0',
-                           }]
-        splits = ['val', 'test']
+        # subject_splits = [{'motor-observatory_797814_2025-04-21_11-35-21_tracked_v3'},
+        #                   {'motor-observatory_797814_2025-04-21_11-35-21_tracked_v3'}]
+        # splits = ['val', 'test']
 
-        for i, subjects in enumerate(subject_splits):
-            self.metadata.loc[self.metadata['subject'].isin(subjects), 'split'] = splits[i]
+        # for i, subjects in enumerate(subject_splits):
+        # self.metadata.loc[self.metadata['subject'].isin(subjects), 'split'] = splits[i]
 
+        sub = 'motor-observatory_797814_2025-04-21_11-35-21_tracked_v3'
+        print(self.metadata['subject'].unique())
+        print(self.metadata['trial'].unique())
+        self.metadata.loc[self.metadata['subject'] == sub, 'split'] = 'test'
+        self.metadata.loc[self.metadata['trial'] == '2025-04-21T11_49_55', 'split'] = 'val'
+            
         # only select 2 validation samples to use
         if split_dict: 
             for split, n in split_dict.items():
@@ -178,7 +207,8 @@ class AniposeFlyDataset(BaseDataset):
             splits = valid_splits
 
         os.chdir(self.dataset_path)
-        subjects = glob.glob('*/*/Fly *')            
+        subjects = glob.glob('*_tracked_v3')
+        # subjects = glob.glob('*/*/Fly *')            
         # generate the dataset for each split
         for split in splits: 
             for subject in tqdm(subjects, desc = split): 
@@ -194,24 +224,33 @@ class AniposeFlyDataset(BaseDataset):
 
     def _get_trials(self, subject_path, subject): 
 
-        calib_path = os.path.join(self.dataset_path, os.path.dirname(subject))
+        calib_path = os.path.join(self.dataset_path, subject)
         intrinsics_dict, *_ = self.load_calibration(calib_path)
         n_cams = len(intrinsics_dict)
 
-        video_paths = sorted(glob.glob(os.path.join(subject_path, 'Raw Video', '*.avi')))
+        config_file = os.path.join(calib_path, 'config.toml')
+        config = toml.load(config_file)
+
+        # video_paths = sorted(glob.glob(os.path.join(subject_path, 'Raw Video', '*.avi')))
+        video_paths = sorted(glob.glob(os.path.join(subject_path.replace('_tracked_v3', ''),
+                                                    'behavior-videos/behavior-videos', '*.mp4')))
+
         unique_trials = set()
         rows = []
 
         for i, video_path in enumerate(tqdm(video_paths)):
 
-            trial = os.path.splitext(os.path.basename(video_path))[0]
+            # trial = os.path.splitext(os.path.basename(video_path))[0]
             # cs = trial.split(' ')
             # trial = f'{cs[0]} {cs[1]}  {cs[3]} {cs[4]}'
-            trial = trial.split('Cam')[0].strip()
-
+            # trial = trial.split('Cam')[0].strip()
+            trial = get_video_name(config, video_path)
+            
             cap = cv2.VideoCapture(video_path)
             n_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
             cap.release()
+
+            print(trial)
 
             if trial not in unique_trials:
 
@@ -242,20 +281,27 @@ class AniposeFlyDataset(BaseDataset):
         # select subset of metadata associated with the split 
         metadata = self.metadata[self.metadata['split'] == split]
 
-        calib_path = os.path.dirname(subject_path)
+        calib_path = subject_path
         # load calibration data
         intrinsics, extrinsics, distortions, offset_dict = self.load_calibration(calib_path)
 
+        config_file = os.path.join(calib_path, 'config.toml')
+        config = toml.load(config_file)
+
         # get videos
-        video_paths = sorted(glob.glob(os.path.join(subject_path, 'Raw Video', f'*.avi')))
+        # video_paths = sorted(glob.glob(os.path.join(subject_path, 'Raw Video', f'*.avi')))
+        video_paths = sorted(glob.glob(os.path.join(subject_path.replace('_tracked_v3', ''),
+                                                    'behavior-videos/behavior-videos', '*.mp4')))
         trials = set()
 
         for i, video_path in enumerate(video_paths): 
 
-            trial = os.path.splitext(os.path.basename(video_path))[0]
+            # trial = os.path.splitext(os.path.basename(video_path))[0]
             # cs = trial.split(' ')
             # trial = f'{cs[0]} {cs[1]}  {cs[3]} {cs[4]}'
-            trial = trial.split('Cam')[0].strip()
+            # trial = trial.split('Cam')[0].strip()
+            trial = get_video_name(config, video_path)
+            
             trials.add(trial)
 
         # traverse the camera names
@@ -264,7 +310,8 @@ class AniposeFlyDataset(BaseDataset):
             # get videos from each camera corresponding to this trial
             # cs = os.path.basename(trial).split(' ')
             # cam_videos = os.path.join(subject_path, 'Raw Video', f'{cs[0]} {cs[1]}*{cs[3]} {cs[4]}.mp4')
-            cam_videos = os.path.join(subject_path, 'Raw Video', trial + '*.avi')
+            cam_videos = os.path.join(subject_path.replace('_tracked_v3', ''),
+                                      'behavior-videos/behavior-videos', '*' + trial + '*.mp4')
             cam_videos = sorted(glob.glob(cam_videos))
 
             # skip trial if metadata excludes it 
@@ -276,8 +323,8 @@ class AniposeFlyDataset(BaseDataset):
             # load and format the 3d annotations
             trial_outpath = os.path.join(outpath, trial)
             os.makedirs(trial_outpath, exist_ok = True)
-            print(os.path.join(subject_path, 'pose-3d', f'{trial}*.csv'))
-            data_path = glob.glob(os.path.join(subject_path, 'pose-3d', f'{trial}*.csv'))[0]
+            print(os.path.join(subject_path, 'pose-3d', f'{trial}.csv'))
+            data_path = os.path.join(subject_path, 'pose-3d', f'{trial}.csv')
 
             pose_dict = self.load_pose3d(data_path)
             pose_dict = self._subset_pose_dict(pose_dict, n_frames = split_frames)
@@ -330,7 +377,8 @@ class AniposeFlyDataset(BaseDataset):
             # extract info from the video   
             cam_trial = os.path.splitext(os.path.basename(cam_video_path))[0] 
             # cam_name = cam_trial.split(' ')[2].split('-')[1]
-            cam_name = cam_trial.split('Cam-')[1][0]
+            # cam_name = cam_trial.split('Cam-')[1][0]
+            cam_name = cam_trial.split('_')[0]
 
             # deserialize video into images
             cam_outpath = os.path.join(trial_outpath, 'img', cam_name)
@@ -370,8 +418,9 @@ class AniposeFlyDataset(BaseDataset):
             # extract info from the video   
             cam_trial = os.path.splitext(os.path.basename(cam_video_path))[0] 
             # cam_name = cam_trial.split(' ')[2].split('-')[1]
-            cam_name = cam_trial.split('Cam-')[1][0]
-
+            # cam_name = cam_trial.split('Cam-')[1][0]
+            cam_name = cam_trial.split('_')[0]
+            
             video_info = io.get_video_info(cam_video_path)
             cam_height_dict[cam_name] = video_info['camera_heights']
             cam_width_dict[cam_name] = video_info['camera_widths']
