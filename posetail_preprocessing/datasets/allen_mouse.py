@@ -1,11 +1,11 @@
 import glob
-import os 
+import os
 import cv2
 import toml
 import shutil
 
 import numpy as np
-import pandas as pd 
+import pandas as pd
 
 from einops import rearrange
 from tqdm import tqdm
@@ -15,7 +15,7 @@ from posetail_preprocessing.utils import io, assemble_extrinsics
 
 import re
 
-# functions from anipose 
+# functions from anipose
 def true_basename(fname):
     basename = os.path.basename(fname)
     basename = os.path.splitext(basename)[0]
@@ -41,9 +41,9 @@ def get_video_name(config, fname):
     return vidname.strip()
 
 
-class AllenMouseDataset(BaseDataset): 
+class AllenMouseDataset(BaseDataset):
 
-    def __init__(self, dataset_path, dataset_outpath, 
+    def __init__(self, dataset_path, dataset_outpath,
                  dataset_name = 'allen-mouse', error_thresh = None):
         super().__init__(dataset_path, dataset_outpath)
 
@@ -68,9 +68,9 @@ class AllenMouseDataset(BaseDataset):
 
         cams = list(data.keys())
 
-        for cam in cams: 
+        for cam in cams:
 
-            if cam == 'metadata': 
+            if cam == 'metadata':
                 continue
 
             cam_data = data[cam]
@@ -102,7 +102,7 @@ class AllenMouseDataset(BaseDataset):
         return transf_matrix
 
 
-    def _load_center(self, df): 
+    def _load_center(self, df):
 
         center = np.zeros(3)
 
@@ -122,7 +122,7 @@ class AllenMouseDataset(BaseDataset):
 
         error_cols = [col for col in df.columns if col.endswith('_error')]
 
-        # get transformation matrix and center 
+        # get transformation matrix and center
         transf_matrix = self._load_transf_matrix(df)
         center = self._load_center(df)
 
@@ -149,13 +149,13 @@ class AllenMouseDataset(BaseDataset):
 
 
     def generate_metadata(self):
-        
+
         # subjects = io.get_dirs(self.dataset_path)
         os.chdir(self.dataset_path)
         subjects = glob.glob('*_tracked_v3')
         rows = []
 
-        for subject in subjects: 
+        for subject in subjects:
             subject_path = os.path.join(self.dataset_path, subject)
             metadata_rows = self._get_trials(subject_path, subject)
             rows.extend(metadata_rows)
@@ -169,9 +169,9 @@ class AllenMouseDataset(BaseDataset):
         return df
 
 
-    def select_splits(self, split_dict = None, split_frames_dict = None, 
+    def select_splits(self, split_dict = None, split_frames_dict = None,
                       random_state = 3):
-        
+
         self.split_frames_dict = split_frames_dict
 
         # subject_splits = [{'motor-observatory_797814_2025-04-21_11-35-21_tracked_v3'},
@@ -186,32 +186,32 @@ class AllenMouseDataset(BaseDataset):
         print(self.metadata['trial'].unique())
         self.metadata.loc[self.metadata['subject'] == sub, 'split'] = 'test'
         self.metadata.loc[self.metadata['trial'] == '2025-04-21T11_49_55', 'split'] = 'val'
-            
+
         # only select 2 validation samples to use
-        if split_dict: 
+        if split_dict:
             for split, n in split_dict.items():
                 self._select_subset_for_split(split = split, n = n, random_state = random_state)
 
 
         return self.metadata
 
-    def generate_dataset(self, splits = None): 
+    def generate_dataset(self, splits = None):
 
         # determine which dataset splits to generate
         valid_splits = np.unique(self.metadata['split'])
 
-        if splits is not None: 
+        if splits is not None:
             splits = set(splits)
-            assert splits.issubset(valid_splits) 
-        else: 
+            assert splits.issubset(valid_splits)
+        else:
             splits = valid_splits
 
         os.chdir(self.dataset_path)
         subjects = glob.glob('*_tracked_v3')
-        # subjects = glob.glob('*/*/Fly *')            
+        # subjects = glob.glob('*/*/Fly *')
         # generate the dataset for each split
-        for split in splits: 
-            for subject in tqdm(subjects, desc = split): 
+        for split in splits:
+            for subject in tqdm(subjects, desc = split):
                 subject_path = os.path.join(self.dataset_path, subject)
                 outpath = os.path.join(self.dataset_outpath, split, subject.replace('/', '-'))
                 os.makedirs(outpath, exist_ok = True)
@@ -222,7 +222,7 @@ class AllenMouseDataset(BaseDataset):
                     os.rmdir(outpath)
 
 
-    def _get_trials(self, subject_path, subject): 
+    def _get_trials(self, subject_path, subject):
 
         calib_path = os.path.join(self.dataset_path, subject)
         intrinsics_dict, *_ = self.load_calibration(calib_path)
@@ -245,7 +245,7 @@ class AllenMouseDataset(BaseDataset):
             # trial = f'{cs[0]} {cs[1]}  {cs[3]} {cs[4]}'
             # trial = trial.split('Cam')[0].strip()
             trial = get_video_name(config, video_path)
-            
+
             cap = cv2.VideoCapture(video_path)
             n_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
             cap.release()
@@ -256,29 +256,29 @@ class AllenMouseDataset(BaseDataset):
 
                 metadata_dict = {
                         'id': trial,
-                        'session': subject, 
-                        'subject': subject, 
+                        'session': subject,
+                        'subject': subject,
                         'trial': trial,
-                        'n_cameras': n_cams, 
+                        'n_cameras': n_cams,
                         'n_frames': n_frames,
                         'total_frames': n_frames * n_cams,
                         'split': 'train',
                         'include': True}
-            
+
                 unique_trials.add(trial)
                 rows.append(metadata_dict)
 
         return rows
-    
 
-    def _process_subject(self, subject_path, outpath, split): 
+
+    def _process_subject(self, subject_path, outpath, split):
 
         # number of images to generate from each video
         split_frames = None
-        if self.split_frames_dict and split in self.split_frames_dict: 
+        if self.split_frames_dict and split in self.split_frames_dict:
             split_frames = self.split_frames_dict[split]
 
-        # select subset of metadata associated with the split 
+        # select subset of metadata associated with the split
         metadata = self.metadata[self.metadata['split'] == split]
 
         calib_path = subject_path
@@ -294,18 +294,18 @@ class AllenMouseDataset(BaseDataset):
                                                     'behavior-videos/behavior-videos', '*.mp4')))
         trials = set()
 
-        for i, video_path in enumerate(video_paths): 
+        for i, video_path in enumerate(video_paths):
 
             # trial = os.path.splitext(os.path.basename(video_path))[0]
             # cs = trial.split(' ')
             # trial = f'{cs[0]} {cs[1]}  {cs[3]} {cs[4]}'
             # trial = trial.split('Cam')[0].strip()
             trial = get_video_name(config, video_path)
-            
+
             trials.add(trial)
 
         # traverse the camera names
-        for trial in tqdm(trials): 
+        for trial in tqdm(trials):
 
             # get videos from each camera corresponding to this trial
             # cs = os.path.basename(trial).split(' ')
@@ -314,9 +314,14 @@ class AllenMouseDataset(BaseDataset):
                                       'behavior-videos/behavior-videos', '*' + trial + '*.mp4')
             cam_videos = sorted(glob.glob(cam_videos))
 
-            # skip trial if metadata excludes it 
+            if len(cam_videos) not in [7, 12]:
+                print(trial)
+                print("skipping because not right number of cameras")
+                continue
+
+            # skip trial if metadata excludes it
             df = metadata[metadata['id'] == trial]
-            if df.empty or not df['include'].values[0]: 
+            if df.empty or not df['include'].values[0]:
                 # print('skipping...')
                 continue
 
@@ -336,24 +341,24 @@ class AllenMouseDataset(BaseDataset):
             else:
                 pose_subset = pose
 
-            pose_dict_subset = {'pose': pose_subset, 
+            pose_dict_subset = {'pose': pose_subset,
                                 'keypoints': pose_dict['keypoints']}
 
             io.save_npz(pose_dict_subset, trial_outpath, fname = 'pose3d')
 
-            if split == 'test':  
+            if split == 'test':
                 # for test set, save as videos
                 video_info = self._process_subject_test(
                     cam_videos, trial_outpath)
-            else: 
-                # for train and validation sets, deserialize the camera videos 
-                # and save as images  
+            else:
+                # for train and validation sets, deserialize the camera videos
+                # and save as images
                 video_info = self._process_subject_train(
                     cam_videos, trial_outpath, split_frames = split_frames)
 
             calib_dict = {
-                'intrinsic_matrices': intrinsics, 
-                'extrinsic_matrices': extrinsics, 
+                'intrinsic_matrices': intrinsics,
+                'extrinsic_matrices': extrinsics,
                 'distortion_matrices': distortions,
                 'offset_dict': offset_dict,
                 'num_cameras': len(intrinsics)
@@ -361,21 +366,21 @@ class AllenMouseDataset(BaseDataset):
             calib_dict.update(video_info)
 
             # save camera metadata
-            io.save_yaml(data = calib_dict, outpath = trial_outpath, 
+            io.save_yaml(data = calib_dict, outpath = trial_outpath,
                     fname = 'metadata.yaml')
-        
 
-    def _process_subject_train(self, video_paths, trial_outpath, split_frames = None): 
+
+    def _process_subject_train(self, video_paths, trial_outpath, split_frames = None):
 
         cam_height_dict = {}
         cam_width_dict = {}
         num_frames = []
         fps = []
 
-        for cam_video_path in video_paths: 
-            
-            # extract info from the video   
-            cam_trial = os.path.splitext(os.path.basename(cam_video_path))[0] 
+        for cam_video_path in video_paths:
+
+            # extract info from the video
+            cam_trial = os.path.splitext(os.path.basename(cam_video_path))[0]
             # cam_name = cam_trial.split(' ')[2].split('-')[1]
             # cam_name = cam_trial.split('Cam-')[1][0]
             cam_name = cam_trial.split('_')[0]
@@ -385,25 +390,25 @@ class AllenMouseDataset(BaseDataset):
             os.makedirs(cam_outpath, exist_ok = True)
 
             video_info = io.deserialize_video(
-                cam_video_path, 
-                cam_outpath, 
+                cam_video_path,
+                cam_outpath,
                 debug_ix = split_frames)
-            
+
             cam_height_dict[cam_name] = video_info['camera_heights']
             cam_width_dict[cam_name] = video_info['camera_widths']
             num_frames.append(video_info['num_frames'])
             fps.append(video_info['fps'])
 
         video_info = {
-            'camera_heights': cam_height_dict, 
-            'camera_widths': cam_width_dict, 
+            'camera_heights': cam_height_dict,
+            'camera_widths': cam_width_dict,
             'num_frames': min(num_frames),
             'fps': min(fps)
         }
 
         return video_info
-    
-    def _process_subject_test(self, video_paths, trial_outpath): 
+
+    def _process_subject_test(self, video_paths, trial_outpath):
 
         cam_height_dict = {}
         cam_width_dict = {}
@@ -413,14 +418,14 @@ class AllenMouseDataset(BaseDataset):
         outpath = os.path.join(trial_outpath, 'vid')
         os.makedirs(outpath, exist_ok = True)
 
-        for cam_video_path in video_paths: 
+        for cam_video_path in video_paths:
 
-            # extract info from the video   
-            cam_trial = os.path.splitext(os.path.basename(cam_video_path))[0] 
+            # extract info from the video
+            cam_trial = os.path.splitext(os.path.basename(cam_video_path))[0]
             # cam_name = cam_trial.split(' ')[2].split('-')[1]
             # cam_name = cam_trial.split('Cam-')[1][0]
             cam_name = cam_trial.split('_')[0]
-            
+
             video_info = io.get_video_info(cam_video_path)
             cam_height_dict[cam_name] = video_info['camera_heights']
             cam_width_dict[cam_name] = video_info['camera_widths']
@@ -432,8 +437,8 @@ class AllenMouseDataset(BaseDataset):
             os.symlink(cam_video_path, cam_video_outpath)
 
         video_info = {
-            'camera_heights': cam_height_dict, 
-            'camera_widths': cam_width_dict, 
+            'camera_heights': cam_height_dict,
+            'camera_widths': cam_width_dict,
             'num_frames': min(num_frames),
             'fps': min(fps)
         }

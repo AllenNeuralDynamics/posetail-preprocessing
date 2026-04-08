@@ -27,14 +27,16 @@ def true_basename(fname):
     return basename
 
 def camera_from_path(calib_path):
-    name = true_basename(calib_path)
+    basename = true_basename(calib_path)
     
-    tvec = get_mat_from_file(calib_path, 'tc_ext')
-    rvec = cv2.Rodrigues(get_mat_from_file(calib_path, 'rc_ext'))[0]
-    mat = get_mat_from_file(calib_path, 'camera_matrix')
-    dist = get_mat_from_file(calib_path, 'distortion_coefficients')
-    cam = Camera(matrix=mat, rvec=rvec, tvec=tvec, dist=dist, name=name)
-    
+    tvec = get_mat_from_file(calib_path, 'T')
+    # note this has a transposed intrinsics and rotation matrix for some reason
+    rvec = cv2.Rodrigues(get_mat_from_file(calib_path, 'R').T)[0]
+    mat = get_mat_from_file(calib_path, 'intrinsicMatrix').T
+    dist = get_mat_from_file(calib_path, 'distortionCoefficients')
+    dist = np.array(dist).ravel()
+    dist[2:] = 0
+    cam = Camera(matrix=mat, rvec=rvec, tvec=tvec, dist=dist, name=basename)
     return cam
 
 class JohnsonMouseDataset(BaseDataset): 
@@ -101,7 +103,8 @@ class JohnsonMouseDataset(BaseDataset):
         pose_dict = self.load_pose3d(pose_path)
 
         trial = '2024_11_25_13_52_32'
-        calib_fnames = sorted(glob.glob(os.path.join(self.dataset_path, trial, 'calibration', '*.yaml')))
+        # calib_fnames = sorted(glob.glob(os.path.join(self.dataset_path, trial, 'calibration', '*.yaml')))
+        calib_fnames = sorted(glob.glob(os.path.join(self.dataset_path, 'calib', '2024_11_26_17_00_20', '*.yaml')))
         video_fnames = sorted(glob.glob(os.path.join(self.dataset_path, trial, '*.mp4')))
 
         intrinsics, extrinsics, distortions = self.load_calibration(calib_fnames)

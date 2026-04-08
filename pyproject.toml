@@ -37,3 +37,6 @@ platforms = ["linux-64"]
 posetail-preprocessing = { path = ".", editable = true }
 
 [tool.pixi.tasks]
+
+[tool.pixi.dependencies]
+ffmpeg = ">=8.0.1,<9"
