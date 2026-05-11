@@ -7,7 +7,7 @@ import shutil
 import numpy as np
 import pandas as pd 
 
-from einops import reduce
+from einops import rearrange, reduce
 from tqdm import tqdm
 
 from posetail_preprocessing.datasets import BaseDataset
@@ -40,11 +40,8 @@ class DexYCBDataset(BaseDataset):
             img_path = glob.glob(os.path.join(os.path.dirname(calib_file), 'rgb', '*.png'))[0]
             h, w = cv2.imread(img_path).shape[:2]
 
-            intrin = metadata['intrinsics'][:3, :3]
-            extrin = metadata['extrinsics']
-
-            intrinsics = np.diag([w, h, 1]) @ intrin @ np.diag([1, -1, -1])
-            extrinsics = np.diag([1, -1, -1, 1]) @ np.linalg.inv(extrin)
+            intrinsics = metadata['intrinsics'][:3, :3]
+            extrinsics = metadata['extrinsics'][:3, :] 
 
             intrinsics_dict[cam_name] = intrinsics.tolist()
             extrinsics_dict[cam_name] = extrinsics.tolist()
@@ -57,14 +54,20 @@ class DexYCBDataset(BaseDataset):
     def load_pose3d(self, data_path, eps = 1e-6):
 
         # filter coordinates based on movement threshold
-        coords = np.array(np.load(data_path)['tracks_3d'])
-        total_movement = reduce(np.abs(np.diff(coords, axis = 0)), 'n k r -> k', 'sum')
+        data = np.load(data_path)
+        coords = np.array(data['tracks_3d'])
+        total_movement = reduce(np.abs(np.diff(coords, axis = 0)), 't n r -> n', 'sum')
         movement_check = total_movement > eps
         coords = coords[:, movement_check]
         pose3d = np.expand_dims(coords, axis = 0) # (n_subjects, time, keypoints, 3)
 
+        # load visibilities 
+        visibility = data['tracks_2d_visibilities'] # (views, time, keypoints)
+        visibility = rearrange(visibility, 'c t n -> 1 t n c') # (n_subjects, time, kpts, views)
+
+        # collate pose, vis, and keypoint names
         keypoints = [f'kpt{i}' for i in range(pose3d.shape[2])]
-        pose3d_dict = {'pose': pose3d, 'keypoints': keypoints}
+        pose3d_dict = {'pose': pose3d, 'keypoints': keypoints, 'vis': visibility}
 
         return pose3d_dict 
 

@@ -6,6 +6,7 @@ import shutil
 import numpy as np
 import pandas as pd 
 
+from einops import rearrange
 from tqdm import tqdm
 
 from posetail_preprocessing.datasets import BaseDataset
@@ -52,11 +53,17 @@ class CMUPanopticGSDataset(BaseDataset):
 
     def load_pose3d(self, data_path):
 
+        # load the pose data (note that even though this dataset has multiple 
+        # subjects, there are no subject ids, so we can just treat it as single subject)
         data = np.load(data_path)
         pose3d = np.expand_dims(data['trajectories'], axis = 0) # (n_subjects, time, kpts, 3)
 
+        # load the visibilities 
+        visibility = data['per_view_visibilities'] # (n_cameras, time, kpts)
+        visibility = rearrange(visibility, 'c t n -> 1 t n c') # (n_subjects, time, kpts, views)
+
         keypoints = [f'kpt{i}' for i in range(pose3d.shape[2])]
-        pose3d_dict = {'pose': pose3d, 'keypoints': keypoints}
+        pose3d_dict = {'pose': pose3d, 'keypoints': keypoints, 'vis': visibility}
 
         return pose3d_dict
 
