@@ -5,17 +5,21 @@ import numpy as np
 import pandas as pd 
 
 from posetail_preprocessing.datasets import (
-    ZefDataset,
+    ZefDataset, 
     AcinosetDataset,
+    AllenMouseDataset,
     AniposeFlyDataset,
     CMUPanopticDataset,
     CMUPanopticGSDataset,
     DexYCBDataset,
+    JarvisMonkeyDataset,
+    JohnsonMouseDataset,
     KubricMultiviewDataset,
-    PointOdysseyMultiviewDataset,
     PairR24MDataset,
     POPDataset,
-    Rat7MDataset
+    Rat7MDataset,
+    SoberBirdDataset,
+    VoigtsMouseDataset
 )
 
 
@@ -91,10 +95,7 @@ def generate_acinoset(prefix, out_prefix, kpt_prefix,
         dataset_path = dataset_path, 
         dataset_outpath = dataset_outpath, 
         dataset_name = dataset_name,
-        keypoints_path = keypoints_path,
-        filter_kernel_size = 11, 
-        filter_thresh = None, 
-        filter_percentile = 95)
+        keypoints_path = keypoints_path)
 
     df = dataset.generate_metadata()
 
@@ -129,14 +130,91 @@ def generate_anipose_fly(prefix, out_prefix,
     dataset = AniposeFlyDataset(
         dataset_path = dataset_path, 
         dataset_outpath = dataset_outpath, 
+        dataset_name = dataset_name,
+        error_thresh = 5)
+
+    df = dataset.generate_metadata()
+
+    # sample 60k training frames, full training dataset
+    splits = {'train', 'val', 'test'}
+    # split_dict = {'train': 3, 'val': 2} # number of videos to sample from the dataset
+    # split_frames_dict = {'train': 16, 'val': 16} # number of consecutive frames per video to sample 
+
+    split_dict = {'train': 1000, 'val': 2} # number of videos to sample from the dataset
+    split_frames_dict = {'train': 60, 'val': 16} # number of consecutive frames per video to sample
+
+    if debug: 
+        splits, split_dict, split_frames_dict = update_subsampling(splits)
+
+    df = dataset.select_splits(
+        split_dict = split_dict, 
+        split_frames_dict = split_frames_dict, 
+        random_state = random_state)
+
+    dataset.generate_dataset(splits = splits)
+
+def generate_sober_bird(prefix, out_prefix, 
+                         dataset_name = 'sober-zebrafinch', 
+                         random_state = 3, debug = False):
+
+    ''' 
+    generates the preprocessed anipose fly dataset
+    '''
+
+    print(f'\ngenerating {dataset_name}...')
+    dataset_path = os.path.join(prefix, dataset_name)
+    dataset_outpath = os.path.join(out_prefix, dataset_name)
+
+    dataset = SoberBirdDataset(
+        dataset_path = dataset_path, 
+        dataset_outpath = dataset_outpath, 
         dataset_name = dataset_name)
 
     df = dataset.generate_metadata()
 
     # sample 60k training frames, full training dataset
     splits = {'train', 'val', 'test'}
-    split_dict = {'train': 3, 'val': 2} # number of videos to sample from the dataset
-    split_frames_dict = {'train': 16, 'val': 16} # number of consecutive frames per video to sample 
+
+    split_dict = {'train': 4, 'val': 1, 'test': 1} # number of videos to sample from the dataset
+    split_frames_dict = {'train': 12000, 'val': 32, 'test': 12000} # number of consecutive frames per video to sample
+
+    if debug: 
+        splits, split_dict, split_frames_dict = update_subsampling(splits)
+
+    df = dataset.select_splits(
+        split_dict = split_dict, 
+        split_frames_dict = split_frames_dict, 
+        random_state = random_state)
+
+    dataset.generate_dataset(splits = splits)
+
+def generate_allen_mouse(prefix, out_prefix, 
+                         dataset_name = 'allen-mouse', 
+                         random_state = 3, debug = False):
+
+    ''' 
+    generates the preprocessed anipose fly dataset
+    '''
+
+    print(f'\ngenerating {dataset_name}...')
+    dataset_path = os.path.join(prefix, dataset_name)
+    dataset_outpath = os.path.join(out_prefix, dataset_name)
+
+    dataset = AllenMouseDataset(
+        dataset_path = dataset_path, 
+        dataset_outpath = dataset_outpath, 
+        dataset_name = dataset_name,
+        error_thresh = 5)
+
+    df = dataset.generate_metadata()
+
+    # sample 60k training frames, full training dataset
+    splits = {'train', 'val', 'test'}
+    # split_dict = {'train': 3, 'val': 2} # number of videos to sample from the dataset
+    # split_frames_dict = {'train': 16, 'val': 16} # number of consecutive frames per video to sample 
+
+    split_dict = {'train': 18, 'val': 1} # number of videos to sample from the dataset
+    split_frames_dict = {'train': 3333, 'val': 32} # number of consecutive frames per video to sample
 
     if debug: 
         splits, split_dict, split_frames_dict = update_subsampling(splits)
@@ -149,6 +227,66 @@ def generate_anipose_fly(prefix, out_prefix,
     dataset.generate_dataset(splits = splits)
 
 
+def generate_johnson_mouse(prefix, out_prefix, 
+                         dataset_name = 'johnson-mouse', 
+                         random_state = 3, debug = False):
+
+    ''' 
+    generates the preprocessed johnson mouse dataset
+    '''
+
+    print(f'\ngenerating {dataset_name}...')
+    dataset_path = os.path.join(prefix, dataset_name)
+    dataset_outpath = os.path.join(out_prefix, dataset_name)
+
+    dataset = JohnsonMouseDataset(
+        dataset_path = dataset_path, 
+        dataset_outpath = dataset_outpath, 
+        dataset_name = dataset_name,
+        conf_thresh = 0.5)
+
+    dataset.generate_dataset()    
+
+def generate_jarvis_monkey(prefix, out_prefix, 
+                         dataset_name = 'jarvis-monkey', 
+                         random_state = 3, debug = False):
+
+    ''' 
+    generates the preprocessed jarvis monkey dataset
+    '''
+
+    print(f'\ngenerating {dataset_name}...')
+    dataset_path = os.path.join(prefix, dataset_name)
+    dataset_outpath = os.path.join(out_prefix, dataset_name)
+
+    dataset = JarvisMonkeyDataset(
+        dataset_path = dataset_path, 
+        dataset_outpath = dataset_outpath, 
+        dataset_name = dataset_name,
+        conf_thresh = 0.5)
+
+    dataset.generate_dataset()    
+
+def generate_voigts_mouse(prefix, out_prefix, 
+                         dataset_name = 'voigts-mouse', 
+                         random_state = 3, debug = False):
+
+    ''' 
+    generates the preprocessed jarvis monkey dataset
+    '''
+
+    print(f'\ngenerating {dataset_name}...')
+    dataset_path = os.path.join(prefix, dataset_name)
+    dataset_outpath = os.path.join(out_prefix, dataset_name)
+
+    dataset = VoigtsMouseDataset(
+        dataset_path = dataset_path, 
+        dataset_outpath = dataset_outpath, 
+        dataset_name = dataset_name,
+        conf_thresh = 0.5)
+
+    dataset.generate_dataset()    
+    
 def generate_cmupanoptic(prefix, out_prefix, kpt_prefix, 
                          dataset_name = 'cmupanoptic', 
                          random_state = 3, debug = False): 
@@ -165,8 +303,7 @@ def generate_cmupanoptic(prefix, out_prefix, kpt_prefix,
         dataset_path = dataset_path, 
         dataset_outpath = dataset_outpath, 
         dataset_name = dataset_name, 
-        keypoints_path = kpt_prefix, 
-        conf_thresh = 0.1)
+        keypoints_path = kpt_prefix)
 
     df = dataset.generate_metadata()
 
@@ -286,43 +423,7 @@ def generate_kubric_multiview(prefix, out_prefix,
     dataset.generate_dataset(splits = splits)
 
 
-def generate_point_odyssey(prefix, out_prefix, dataset_name = 'point-odyssey-human',
-                           random_state = 3, debug = False):
-    '''
-    generates the preprocessed point odyssey multiview dataset
-
-    train: many sessions * T frames
-    val: 1 session (flat split, no subdirectory)
-    test: many sessions * T frames
-    '''
-
-    print(f'\ngenerating {dataset_name}...')
-    dataset_path = os.path.join(prefix, 'point-odyssey/results')
-    dataset_outpath = os.path.join(out_prefix, dataset_name)
-
-    dataset = PointOdysseyMultiviewDataset(
-        dataset_path = dataset_path,
-        dataset_outpath = dataset_outpath,
-        dataset_name = dataset_name)
-
-    df = dataset.generate_metadata()
-
-    splits = {'train', 'val', 'test'}
-    split_dict = {'val': 1}
-    split_frames_dict = {'val': 32}
-
-    if debug:
-        splits, split_dict, split_frames_dict = update_subsampling(splits)
-
-    df = dataset.select_splits(
-        split_dict = split_dict,
-        split_frames_dict = split_frames_dict,
-        random_state = random_state)
-
-    dataset.generate_dataset(splits = splits)
-
-
-def generate_pairr24m(prefix, out_prefix, dataset_name = 'pair-r24m',
+def generate_pairr24m(prefix, out_prefix, dataset_name = 'pair-r24m', 
                       random_state = 3, debug = False):
     ''' 
     generates the preprocessed pairr24m dataset
@@ -416,7 +517,7 @@ def generate_rat7m(prefix, out_prefix, dataset_name = 'rat7m',
         dataset_name = dataset_name,
         filter_kernel_size = 11, 
         filter_thresh = None, 
-        filter_percentile = 90)
+        filter_percentile = 90) # TODO: maybe 95
 
     df = dataset.generate_metadata()
 
@@ -440,11 +541,9 @@ def generate_rat7m(prefix, out_prefix, dataset_name = 'rat7m',
 if __name__ == '__main__': 
 
     # raw and processed data locations
-    # prefix = '/groups/karashchuk/karashchuklab/animal-datasets'
-    # out_prefix = '/groups/karashchuk/karashchuklab/animal-datasets-processed/posetail-finetuning'
-    # out_prefix = '/data/'
-    # prefix = '/data/animal-datasets'
     prefix = '/groups/karashchuk/karashchuklab/animal-datasets'
+    # out_prefix = '/groups/karashchuk/karashchuklab/animal-datasets-processed/posetail-finetuning'
+    # prefix = '/data/animal-datasets'
     out_prefix = '/data/animal-datasets-processed/posetail-finetuning-lili'
 
     os.makedirs(out_prefix, exist_ok = True)
@@ -460,15 +559,18 @@ if __name__ == '__main__':
 
     # finetuning datasets 
     # generate_acinoset(prefix, oust_prefix, kpt_prefix = kpt_prefix, random_state = random_state, debug = debug)
-    # generate_anipose_fly(prefix, out_prefix, random_state = random_state, debug = debug)
+    # generate_anipose_fly(prefix, out_prefix, dataset_name='tuthill-fly', random_state = random_state, debug = debug)
+    # generate_allen_mouse(prefix, out_prefix, random_state = random_state, debug = debug)
     # generate_rat7m(prefix, out_prefix, random_state = random_state, debug = debug)
     # generate_pairr24m(prefix, out_prefix, random_state = random_state, debug = debug)
     # generate_3dpop(prefix, out_prefix, random_state = random_state, debug = debug)
     # generate_3dzef(prefix, out_prefix, random_state = random_state, debug = debug)
     # generate_cmupanoptic(prefix, out_prefix, kpt_prefix = kpt_prefix, random_state = random_state, debug = debug)
-
+    # generate_johnson_mouse(prefix, out_prefix, random_state = random_state, debug = debug)
+    # generate_jarvis_monkey(prefix, out_prefix, random_state = random_state, debug = debug)
+    generate_voigts_mouse(prefix, out_prefix, random_state = random_state, debug = debug)
+    # generate_sober_bird(prefix, out_prefix, random_state = random_state, debug = debug)
+    
     # purely test datasets
     # generate_cmupanoptic3dgs(prefix, out_prefix, random_state = random_state)
     # generate_dex_ycb(prefix, out_prefix, random_state = random_state) 
-
-    generate_point_odyssey(prefix, out_prefix, random_state=random_state)
