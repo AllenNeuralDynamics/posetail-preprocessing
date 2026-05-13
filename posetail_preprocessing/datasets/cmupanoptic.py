@@ -10,18 +10,25 @@ from itertools import chain
 from tqdm import tqdm
 
 from posetail_preprocessing.datasets import BaseDataset
-from posetail_preprocessing.utils import io, assemble_extrinsics
+from posetail_preprocessing.utils import io, assemble_extrinsics, filter_coords
 
 
 class CMUPanopticDataset(BaseDataset): 
 
     def __init__(self, dataset_path, dataset_outpath, keypoints_path,
-                 dataset_name = 'cmupanoptic', conf_thresh = None):
+                 dataset_name = 'cmupanoptic', conf_thresh = None,
+                 filter_kernel_size = 11, filter_thresh = None,
+                 filter_percentile = 90):
         super().__init__(dataset_path, dataset_outpath)
 
         self.dataset_name = dataset_name
-        self.keypoints_path = keypoints_path 
-        self.conf_thresh = conf_thresh # filters keypoints based on confidence threshold   
+        self.keypoints_path = keypoints_path
+        self.conf_thresh = conf_thresh # filters keypoints based on confidence threshold
+
+        # parameters for filtering ground truth keypoints
+        self.kernel_size = filter_kernel_size
+        self.thresh = filter_thresh
+        self.percentile = filter_percentile
     
     def load_calibration(self, calib_path):
 
@@ -117,7 +124,15 @@ class CMUPanopticDataset(BaseDataset):
         # combine body, face, and hand keypoints to construct pose dict
         all_coords = np.concatenate((coords_aligned), axis = 2)
         all_kpts_flat = list(chain.from_iterable(all_kpts))
-        pose3d_dict = {'pose': all_coords, 'keypoints': all_kpts_flat, 'ids': all_subject_ids, 
+
+        # filter out inaccurate keypoints
+        all_coords = filter_coords(
+            coords = all_coords,
+            kernel_size = self.kernel_size,
+            thresh = self.thresh,
+            percentile = self.percentile)
+
+        pose3d_dict = {'pose': all_coords, 'keypoints': all_kpts_flat, 'ids': all_subject_ids,
                        'start_frame': common_start, 'end_frame': common_end}
 
         return pose3d_dict

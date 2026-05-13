@@ -162,11 +162,14 @@ def generate_cmupanoptic(prefix, out_prefix, kpt_prefix,
     dataset_outpath = os.path.join(out_prefix, dataset_name)
 
     dataset = CMUPanopticDataset(
-        dataset_path = dataset_path, 
-        dataset_outpath = dataset_outpath, 
-        dataset_name = dataset_name, 
-        keypoints_path = kpt_prefix, 
-        conf_thresh = 0.1)
+        dataset_path = dataset_path,
+        dataset_outpath = dataset_outpath,
+        dataset_name = dataset_name,
+        keypoints_path = kpt_prefix,
+        conf_thresh = 0.1,
+        filter_kernel_size = 11,
+        filter_thresh = None,
+        filter_percentile = 90)
 
     df = dataset.generate_metadata()
 
