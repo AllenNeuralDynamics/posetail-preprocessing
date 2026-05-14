@@ -226,6 +226,10 @@ class CMUPanopticDataset(BaseDataset):
             for session in tqdm(sessions, desc=f'{split} [{self.dataset_name}]', unit='session'):
 
                 outpath = os.path.join(self.dataset_outpath, split, session, 'trial')
+
+                if os.path.exists(os.path.join(outpath, 'metadata.yaml')):
+                    continue
+
                 self._process_session(outpath, session, split)
 
 

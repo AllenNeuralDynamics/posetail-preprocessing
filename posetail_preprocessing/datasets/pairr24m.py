@@ -320,12 +320,15 @@ class PairR24MDataset(BaseDataset):
         # traverse the trials
         for start_frame in start_frames:
 
+            trial_outpath = os.path.join(outpath, str(start_frame))
+
+            if os.path.exists(os.path.join(trial_outpath, 'metadata.yaml')):
+                continue
+
             # skip video if metadata excludes it
             df = metadata[metadata['id'] == f'{id}_{start_frame}']
             if df.empty or not df['include'].values[0]:
                 continue
-
-            trial_outpath = os.path.join(outpath, str(start_frame))
 
             # for train/val use movement-selected window; test uses raw start_frame
             if split != 'test' and 'movement_start_frame' in df.columns:
@@ -337,10 +340,6 @@ class PairR24MDataset(BaseDataset):
                 pose_subset = pose[:, pose_start:pose_start + split_frames, :, :]
             else:
                 pose_subset = pose[:, pose_start:pose_start + chunk_size, :, :]
-
-            pose_dict_subset = {'pose': pose_subset,
-                                'keypoints': pose_dict['keypoints']}
-            io.save_npz(pose_dict_subset, trial_outpath, fname = 'pose3d')
 
             # put videos/frames in the desired format
             if split == 'test':
@@ -354,6 +353,14 @@ class PairR24MDataset(BaseDataset):
                     session_path, trial_outpath,
                     cam_names, start_frame, split_frames,
                     local_offset=local_offset)
+
+            # trim pose to actual frames written (video may be shorter than split_frames)
+            effective_n = video_info.get('effective_n_frames', pose_subset.shape[1])
+            pose_subset = pose_subset[:, :effective_n, :, :]
+
+            pose_dict_subset = {'pose': pose_subset,
+                                'keypoints': pose_dict['keypoints']}
+            io.save_npz(pose_dict_subset, trial_outpath, fname = 'pose3d')
 
             calib_dict = {
                 'intrinsic_matrices': intrinsics, 
@@ -374,6 +381,7 @@ class PairR24MDataset(BaseDataset):
         cam_height_dict = {}
         cam_width_dict = {}
         num_frames = []
+        frames_written = []
         fps = []
 
         n_frames = split_frames if split_frames else 3500
@@ -392,12 +400,14 @@ class PairR24MDataset(BaseDataset):
             cam_height_dict[cam_name] = video_info['camera_heights']
             cam_width_dict[cam_name] = video_info['camera_widths']
             num_frames.append(video_info['num_frames'])
+            frames_written.append(video_info['frames_written'])
             fps.append(video_info['fps'])
 
         video_info = {
             'cam_heights': cam_height_dict,
             'cam_widths': cam_width_dict,
             'num_frames': min(num_frames),
+            'effective_n_frames': min(frames_written),
             'fps': min(fps)
         }
 

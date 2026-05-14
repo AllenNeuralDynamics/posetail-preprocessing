@@ -199,6 +199,10 @@ class POPDataset(BaseDataset):
 
                     session_path = os.path.join(subject_path, session)
                     outpath = os.path.join(subject_outpath, session)
+
+                    if os.path.exists(os.path.join(outpath, 'metadata.yaml')):
+                        continue
+
                     self._process_session(session_path, outpath, session,
                                           metadata = self.metadata, 
                                           split = split)

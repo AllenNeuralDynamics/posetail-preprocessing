@@ -281,6 +281,12 @@ def save_frames_decord(video_path, frame_indices, outpath,
     if frame_ix_synced is None:
         frame_ix_synced = list(range(len(frame_indices)))
 
+    # clamp to actual video length so callers don't need to know the exact frame count
+    n_valid = len(vr)
+    pairs = [(idx, syn) for idx, syn in zip(frame_indices, frame_ix_synced) if idx < n_valid]
+    frame_indices = [p[0] for p in pairs]
+    frame_ix_synced = [p[1] for p in pairs]
+
     frames = vr.get_batch(frame_indices).asnumpy()  # (N, H, W, 3) RGB
 
     for i, frame in enumerate(frames):
@@ -288,5 +294,6 @@ def save_frames_decord(video_path, frame_indices, outpath,
         out_path = os.path.join(outpath, f'{str(frame_ix_synced[i]).zfill(zfill)}.jpg')
         cv2.imwrite(out_path, frame_bgr)
 
+    video_info['frames_written'] = len(frame_indices)
     return video_info
 

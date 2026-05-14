@@ -337,6 +337,9 @@ class Rat7MDataset(BaseDataset):
             # get starting frame
             trial_outpath = os.path.join(outpath, str(start_frame).zfill(6))
 
+            if os.path.exists(os.path.join(trial_outpath, 'metadata.yaml')):
+                continue
+
             # skip video if metadata excludes it
             df = metadata[metadata['id'] == f'{session}_{start_frame}']
             if df.empty or not df['include'].values[0]:
@@ -364,6 +367,7 @@ class Rat7MDataset(BaseDataset):
 
             # put videos/frames in the desired format
             if split == 'test':
+                continue  # skip test generation for now
                 # for test set, save as videos
                 video_info = self._process_session_test(
                     session_path, trial_outpath,
