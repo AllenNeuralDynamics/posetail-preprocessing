@@ -119,14 +119,17 @@ class Rat7MDataset(BaseDataset):
         self.metadata['movement_start_frame'] = 0
         self.metadata['movement_score'] = 0.0
 
-        for session in self.metadata['session'].unique():
+        sessions_to_score = [s for s in self.metadata['session'].unique()
+                             if not self.metadata[
+                                 (self.metadata['session'] == s) &
+                                 self.metadata['split'].isin(splits)].empty]
+
+        for session in tqdm(sessions_to_score, desc=f'scoring movement ({", ".join(splits)})',
+                            unit='session'):
             session_mask = self.metadata['session'] == session
             session_rows = self.metadata[session_mask]
 
-            # only score rows in the requested splits
             rows_to_score = session_rows[session_rows['split'].isin(splits)]
-            if rows_to_score.empty:
-                continue
 
             data_path = os.path.join(self.dataset_path, 'data', f'mocap-{session}.mat')
             pose_dict = self.load_pose3d(data_path)
@@ -134,7 +137,7 @@ class Rat7MDataset(BaseDataset):
 
             for idx, row in rows_to_score.iterrows():
                 w = split_frames_dict.get(row['split'], chunk_size)
-                start_frame = int(row['id'].split('_')[1])
+                start_frame = int(row['id'].rsplit('_', 1)[-1])
                 ms, score = best_movement_window(
                     pose, w,
                     frame_start=start_frame,
@@ -258,7 +261,7 @@ class Rat7MDataset(BaseDataset):
             os.makedirs(prefix, exist_ok = True)
             sessions = io.get_dirs(video_path)
 
-            for i, session in enumerate(tqdm(sessions, desc = split)):
+            for i, session in enumerate(tqdm(sessions, desc=f'{split} [{self.dataset_name}]', unit='session')):
 
                 session_path = os.path.join(video_path, session)
                 outpath = os.path.join(prefix, session)
@@ -329,7 +332,7 @@ class Rat7MDataset(BaseDataset):
         pose = pose_dict['pose']
 
         # traverse the trials
-        for start_frame in start_frames:
+        for start_frame in tqdm(start_frames, ncols=70, desc=split):
 
             # get starting frame
             trial_outpath = os.path.join(outpath, str(start_frame).zfill(6))

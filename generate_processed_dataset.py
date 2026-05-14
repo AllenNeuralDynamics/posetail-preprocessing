@@ -465,14 +465,14 @@ if __name__ == '__main__':
     # finetuning datasets 
     # generate_acinoset(prefix, oust_prefix, kpt_prefix = kpt_prefix, random_state = random_state, debug = debug)
     # generate_anipose_fly(prefix, out_prefix, random_state = random_state, debug = debug)
-    # generate_rat7m(prefix, out_prefix, random_state = random_state, debug = debug)
-    # generate_pairr24m(prefix, out_prefix, random_state = random_state, debug = debug)
-    # generate_3dpop(prefix, out_prefix, random_state = random_state, debug = debug)
+    generate_rat7m(prefix, out_prefix, random_state = random_state, debug = debug)
+    generate_pairr24m(prefix, out_prefix, random_state = random_state, debug = debug)
+    generate_3dpop(prefix, out_prefix, random_state = random_state, debug = debug)
     # generate_3dzef(prefix, out_prefix, random_state = random_state, debug = debug)
-    # generate_cmupanoptic(prefix, out_prefix, kpt_prefix = kpt_prefix, random_state = random_state, debug = debug)
+    generate_cmupanoptic(prefix, out_prefix, kpt_prefix = kpt_prefix, random_state = random_state, debug = debug)
 
     # purely test datasets
     # generate_cmupanoptic3dgs(prefix, out_prefix, random_state = random_state)
     # generate_dex_ycb(prefix, out_prefix, random_state = random_state) 
 
-    generate_point_odyssey(prefix, out_prefix, random_state=random_state)
+    # generate_point_odyssey(prefix, out_prefix, random_state=random_state)

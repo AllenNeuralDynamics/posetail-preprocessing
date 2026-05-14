@@ -164,7 +164,10 @@ class CMUPanopticDataset(BaseDataset):
 
         rows_to_score = self.metadata[self.metadata['split'].isin(splits)]
 
-        for idx, row in rows_to_score.iterrows():
+        for idx, row in tqdm(rows_to_score.iterrows(),
+                             total=len(rows_to_score),
+                             desc=f'scoring movement ({", ".join(splits)})',
+                             unit='session'):
             session_path = os.path.join(self.dataset_path, row['session'])
             pose_dict = self.load_pose3d(session_path)
             common_start = pose_dict['start_frame']
@@ -220,7 +223,7 @@ class CMUPanopticDataset(BaseDataset):
 
             sessions = io.get_dirs(self.dataset_path)
 
-            for session in tqdm(sessions, desc = split): 
+            for session in tqdm(sessions, desc=f'{split} [{self.dataset_name}]', unit='session'):
 
                 outpath = os.path.join(self.dataset_outpath, split, session, 'trial')
                 self._process_session(outpath, session, split)

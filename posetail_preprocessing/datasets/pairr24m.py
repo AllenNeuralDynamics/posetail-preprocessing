@@ -111,13 +111,17 @@ class PairR24MDataset(BaseDataset):
         self.metadata['movement_start_frame'] = 0
         self.metadata['movement_score'] = 0.0
 
-        for session in self.metadata['session'].unique():
+        sessions_to_score = [s for s in self.metadata['session'].unique()
+                             if not self.metadata[
+                                 (self.metadata['session'] == s) &
+                                 self.metadata['split'].isin(splits)].empty]
+
+        for session in tqdm(sessions_to_score, desc=f'scoring movement ({", ".join(splits)})',
+                            unit='session'):
             session_mask = self.metadata['session'] == session
             session_rows = self.metadata[session_mask]
 
             rows_to_score = session_rows[session_rows['split'].isin(splits)]
-            if rows_to_score.empty:
-                continue
 
             data_path = os.path.join(self.dataset_path, session, 'markerDataset.csv')
             if not os.path.isfile(data_path):
@@ -129,7 +133,7 @@ class PairR24MDataset(BaseDataset):
 
             for idx, row in rows_to_score.iterrows():
                 w = split_frames_dict.get(row['split'], chunk_size)
-                start_frame = int(row['id'].split('_')[1])
+                start_frame = int(row['id'].rsplit('_', 1)[-1])
                 ms, score = best_movement_window(
                     pose, w,
                     frame_start=start_frame,
@@ -189,7 +193,7 @@ class PairR24MDataset(BaseDataset):
             os.makedirs(self.dataset_outpath, exist_ok = True)
             sessions = io.get_dirs(self.dataset_path)
 
-            for session in tqdm(sessions, desc = split):
+            for session in tqdm(sessions, desc=f'{split} [{self.dataset_name}]', unit='session'):
 
                 # skip this session because there are only 3 cameras and missing
                 # videos for cam 3 - only session like this 

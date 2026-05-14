@@ -127,7 +127,10 @@ class POPDataset(BaseDataset):
 
         rows_to_score = self.metadata[self.metadata['split'].isin(splits)]
 
-        for idx, row in rows_to_score.iterrows():
+        for idx, row in tqdm(rows_to_score.iterrows(),
+                             total=len(rows_to_score),
+                             desc=f'scoring movement ({", ".join(splits)})',
+                             unit='session'):
             session = row['session']
             split = row['split']
             subject_count = session_to_subject.get(session)
@@ -183,7 +186,7 @@ class POPDataset(BaseDataset):
 
             subject_counts = io.get_dirs(self.dataset_path)
 
-            for subject_count in tqdm(subject_counts, desc = f'{split}_outer'):
+            for subject_count in tqdm(subject_counts, desc=f'{split} [{self.dataset_name}]', unit='group'):
 
                 if subject_count in {'Markerless', 'N6000', 'SinglePigeon'}:
                     continue
@@ -192,7 +195,7 @@ class POPDataset(BaseDataset):
                 subject_outpath = os.path.join(self.dataset_outpath, split, subject_count)
                 sessions = io.get_dirs(subject_path)
 
-                for session in tqdm(sessions, desc = f'{split}_inner', leave = False):  
+                for session in tqdm(sessions, desc='sessions', unit='session', leave=False):
 
                     session_path = os.path.join(subject_path, session)
                     outpath = os.path.join(subject_outpath, session)
