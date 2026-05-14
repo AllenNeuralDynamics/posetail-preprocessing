@@ -273,21 +273,17 @@ class CMUPanopticDataset(BaseDataset):
 
     def _get_pose3d(self, subject, n_kpts, kpt_type, conf_thresh = None):
         
-        if kpt_type == 'pose': 
+        if kpt_type == 'pose':
             pose = np.array(subject['joints19']).reshape(n_kpts, 4)
             pose3d = pose[:, :3]
 
-            if conf_thresh: 
+            if conf_thresh:
                 conf = pose[:, 3]
-                pose3d = pose3d[conf > conf_thresh]
+                pose3d[conf <= conf_thresh] = np.nan
 
         elif kpt_type == 'face':
             pose = np.array(subject['face70']['landmarks']).reshape(n_kpts, 3)
-            pose3d = pose[:, :3]
-            
-            if conf_thresh: 
-                conf = pose[:, 3]
-                pose3d = pose3d[conf > conf_thresh]
+            pose3d = pose
 
         else: # kpt_type == 'hand' 
             assert n_kpts % 2 == 0
