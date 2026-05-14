@@ -351,16 +351,16 @@ class POPDataset(BaseDataset):
             fps.append(video_info['fps'])
 
         video_info = {
-            'cam_heights': cam_height_dict,
-            'cam_widths': cam_width_dict,
+            'camera_heights': cam_height_dict,
+            'camera_widths': cam_width_dict,
             'num_frames': min(num_frames),
             'fps': min(fps)
         }
 
-        return video_info 
-    
+        return video_info
 
-    def _process_session_test(self, split_path, trial_outpath, 
+
+    def _process_session_test(self, split_path, trial_outpath,
                                session, cam_names): 
 
         # deserialize the camera videos and save as images 
@@ -388,8 +388,8 @@ class POPDataset(BaseDataset):
             os.symlink(cam_video_path, cam_video_outpath)
 
         video_info = {
-            'cam_heights': cam_height_dict, 
-            'cam_widths': cam_width_dict, 
+            'camera_heights': cam_height_dict,
+            'camera_widths': cam_width_dict,
             'num_frames': min(num_frames),
             'fps': min(fps)
         }

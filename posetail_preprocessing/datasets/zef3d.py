@@ -274,7 +274,7 @@ class ZefDataset(BaseDataset):
                 'distortion_matrices': distortions,
                 'camera_heights': cam_height_dict,
                 'camera_widths': cam_width_dict,
-                'n_frames': min(n_frames), 
+                'num_frames': min(n_frames),
                 'num_cameras': len(intrinsics)}
 
             # save camera metadata

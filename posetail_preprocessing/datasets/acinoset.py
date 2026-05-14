@@ -389,14 +389,14 @@ class AcinosetDataset(BaseDataset):
             fps.append(video_info['fps'])
 
         video_info = {
-            'cam_heights': cam_height_dict, 
-            'cam_widths': cam_width_dict, 
+            'camera_heights': cam_height_dict,
+            'camera_widths': cam_width_dict,
             'num_frames': min(num_frames),
             'fps': min(fps)
         }
 
         return video_info
-    
+
     def _process_subject_test(self, alignment_path, cam_videos, trial_outpath, cam_names): 
 
         # get params to align video
@@ -447,8 +447,8 @@ class AcinosetDataset(BaseDataset):
             
 
         video_info = {
-            'cam_heights': cam_height_dict, 
-            'cam_widths': cam_width_dict, 
+            'camera_heights': cam_height_dict,
+            'camera_widths': cam_width_dict,
             'num_frames': min(num_frames),
             'fps': min(fps)
         }

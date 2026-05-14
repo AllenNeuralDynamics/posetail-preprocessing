@@ -268,7 +268,7 @@ class KubricMultiviewDataset(BaseDataset):
                 'distortion_matrices': distortions,
                 'camera_heights': heights,
                 'camera_widths': widths,
-                'n_frames': min(n_frames), 
+                'num_frames': min(n_frames),
                 'num_cameras': len(cam_names)}
 
             # save camera metadata

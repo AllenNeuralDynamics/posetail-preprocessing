@@ -404,17 +404,17 @@ class PairR24MDataset(BaseDataset):
             fps.append(video_info['fps'])
 
         video_info = {
-            'cam_heights': cam_height_dict,
-            'cam_widths': cam_width_dict,
+            'camera_heights': cam_height_dict,
+            'camera_widths': cam_width_dict,
             'num_frames': min(num_frames),
             'effective_n_frames': min(frames_written),
             'fps': min(fps)
         }
 
         return video_info
-    
 
-    def _process_session_test(self, video_dir, trial_outpath, 
+
+    def _process_session_test(self, video_dir, trial_outpath,
                               cam_names, start_frame): 
 
         # save video/image data in the expected format
@@ -443,8 +443,8 @@ class PairR24MDataset(BaseDataset):
             os.symlink(cam_video_path, cam_video_outpath)
 
         video_info = {
-            'cam_heights': cam_height_dict, 
-            'cam_widths': cam_width_dict, 
+            'camera_heights': cam_height_dict,
+            'camera_widths': cam_width_dict,
             'num_frames': min(num_frames),
             'fps': min(fps)
         }

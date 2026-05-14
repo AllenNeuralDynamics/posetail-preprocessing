@@ -452,7 +452,7 @@ if __name__ == '__main__':
     out_prefix = '/data/animal-datasets-processed/posetail-finetuning-lili'
 
     os.makedirs(out_prefix, exist_ok = True)
-    # kpt_prefix = '/home/ruppk2@hhmi.org/posetail-preprocessing/posetail_preprocessing/keypoints'
+    kpt_prefix = '/home/ruppk2@hhmi.org/posetail-preprocessing/posetail_preprocessing/keypoints'
 
     # random state for reproducing which subsets of each
     # dataset are selected 
@@ -465,9 +465,9 @@ if __name__ == '__main__':
     # finetuning datasets 
     # generate_acinoset(prefix, oust_prefix, kpt_prefix = kpt_prefix, random_state = random_state, debug = debug)
     # generate_anipose_fly(prefix, out_prefix, random_state = random_state, debug = debug)
-    generate_rat7m(prefix, out_prefix, random_state = random_state, debug = debug)
-    generate_pairr24m(prefix, out_prefix, random_state = random_state, debug = debug)
-    generate_3dpop(prefix, out_prefix, random_state = random_state, debug = debug)
+    # generate_rat7m(prefix, out_prefix, random_state = random_state, debug = debug)
+    # generate_pairr24m(prefix, out_prefix, random_state = random_state, debug = debug)
+    # generate_3dpop(prefix, out_prefix, random_state = random_state, debug = debug)
     # generate_3dzef(prefix, out_prefix, random_state = random_state, debug = debug)
     generate_cmupanoptic(prefix, out_prefix, kpt_prefix = kpt_prefix, random_state = random_state, debug = debug)
 

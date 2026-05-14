@@ -505,16 +505,16 @@ class CMUPanopticDataset(BaseDataset):
             fps.append(video_info['fps'])
 
         video_info = {
-            'cam_heights': cam_height_dict,
-            'cam_widths': cam_width_dict,
+            'camera_heights': cam_height_dict,
+            'camera_widths': cam_width_dict,
             'num_frames': min(num_frames),
             'fps': min(fps)
         }
 
         return video_info
-    
 
-    def _process_session_test(self, session_path, trial_outpath, cam_names, 
+
+    def _process_session_test(self, session_path, trial_outpath, cam_names,
                               start_frame = None, end_frame = None):
 
         cam_height_dict = {}
@@ -559,8 +559,8 @@ class CMUPanopticDataset(BaseDataset):
             writer.release()
 
         video_info = {
-            'cam_heights': cam_height_dict, 
-            'cam_widths': cam_width_dict, 
+            'camera_heights': cam_height_dict,
+            'camera_widths': cam_width_dict,
             'num_frames': min(num_frames),
             'fps': min(fps)
         }

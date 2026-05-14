@@ -435,17 +435,17 @@ class Rat7MDataset(BaseDataset):
                 fps.append(video_info['fps'])
 
         video_info = {
-            'cam_heights': cam_height_dict,
-            'cam_widths': cam_width_dict,
+            'camera_heights': cam_height_dict,
+            'camera_widths': cam_width_dict,
             'num_frames': min(num_frames),
             'fps': min(fps)
         }
 
         return video_info
-    
 
-    def _process_session_test(self, session_path, trial_outpath, 
-                              session, start_frame, start_frames, 
+
+    def _process_session_test(self, session_path, trial_outpath,
+                              session, start_frame, start_frames,
                               sync_dict, chunk_size = 3500): 
         
         # save video/image data in the expected format
@@ -505,8 +505,8 @@ class Rat7MDataset(BaseDataset):
             fps.append(video_info['fps'])
 
         video_info = {
-            'cam_heights': cam_height_dict, 
-            'cam_widths': cam_width_dict, 
+            'camera_heights': cam_height_dict,
+            'camera_widths': cam_width_dict,
             'num_frames': num_frames,
             'fps': fps
         }
