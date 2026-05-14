@@ -173,10 +173,11 @@ def generate_cmupanoptic(prefix, out_prefix, kpt_prefix,
 
     df = dataset.generate_metadata()
 
-    # sample 60k training frames
+    # train: 57 sessions * 1000 frames = 57000 frames
+    # val: 1 session * 32 frames = 32 frames
     splits = {'train', 'val', 'test'}
-    split_dict = {'train': 3, 'val': 2} # number of videos to sample from the dataset
-    split_frames_dict = {'train': 10, 'val': 16} # number of consecutive frames per video to sample 
+    split_dict = {'train': 57, 'val': 1} # number of videos to sample from the dataset
+    split_frames_dict = {'train': 1000, 'val': 32} # number of consecutive frames per video to sample
 
     if debug: 
         splits, split_dict, split_frames_dict = update_subsampling(splits)
@@ -327,10 +328,10 @@ def generate_point_odyssey(prefix, out_prefix, dataset_name = 'point-odyssey-hum
 
 def generate_pairr24m(prefix, out_prefix, dataset_name = 'pair-r24m',
                       random_state = 3, debug = False):
-    ''' 
+    '''
     generates the preprocessed pairr24m dataset
 
-    train: 1225 videos * 49 frames = 60025 frames
+    train: 1039 videos * 49 frames = 50911 frames
     val: 2 videos * 16 frames = 32 frames
     test: 215910 frames
     '''
@@ -339,16 +340,16 @@ def generate_pairr24m(prefix, out_prefix, dataset_name = 'pair-r24m',
     dataset_outpath = os.path.join(out_prefix, dataset_name)
 
     dataset = PairR24MDataset(
-        dataset_path = dataset_path, 
-        dataset_outpath = dataset_outpath, 
+        dataset_path = dataset_path,
+        dataset_outpath = dataset_outpath,
         dataset_name = dataset_name)
 
     df = dataset.generate_metadata()
 
-    # sample 60k training frames, full training data
+    # use all available train trials (1039 across 33 sessions)
     splits = {'train', 'val', 'test'}
-    split_dict = {'train': 1225, 'val': 2} # number of videos to sample from the dataset
-    split_frames_dict = {'train': 49, 'val': 16} # number of consecutive frames per video to sample 
+    split_dict = {'train': 1039, 'val': 2} # number of videos to sample from the dataset
+    split_frames_dict = {'train': 49, 'val': 16} # number of consecutive frames per video to sample
 
     if debug: 
         splits, split_dict, split_frames_dict = update_subsampling(splits)

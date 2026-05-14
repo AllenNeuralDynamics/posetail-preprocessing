@@ -1,4 +1,4 @@
-import os 
+import os
 import cv2
 import json
 import json5
@@ -7,6 +7,8 @@ import yaml
 
 import numpy as np
 import subprocess
+
+from decord import VideoReader, cpu
 
 def get_dirs(path): 
 
@@ -242,11 +244,11 @@ def save_frame_synced(video_path, outpath, frame_ix,
     return video_info
 
 
-def get_frame_synced(video_path, frame_ix, 
+def get_frame_synced(video_path, frame_ix,
                     frame_ix_synced = None):
 
-    if frame_ix_synced is None: 
-        frame_ix_synced = frame_ix 
+    if frame_ix_synced is None:
+        frame_ix_synced = frame_ix
 
     cap = cv2.VideoCapture(video_path)
 
@@ -256,4 +258,35 @@ def get_frame_synced(video_path, frame_ix,
     cap.release()
 
     return frame
+
+
+def save_frames_decord(video_path, frame_indices, outpath,
+                       frame_ix_synced=None, zfill=6):
+    """Read frame_indices from video_path via decord and write as JPGs.
+
+    frame_ix_synced: list of output filenames indices (defaults to 0, 1, 2, ...).
+    Returns video_info dict like get_video_info().
+    """
+    os.makedirs(outpath, exist_ok=True)
+
+    vr = VideoReader(video_path, ctx=cpu(0))
+
+    video_info = {
+        'camera_heights': vr[0].shape[0],
+        'camera_widths': vr[0].shape[1],
+        'num_frames': len(vr),
+        'fps': vr.get_avg_fps()
+    }
+
+    if frame_ix_synced is None:
+        frame_ix_synced = list(range(len(frame_indices)))
+
+    frames = vr.get_batch(frame_indices).asnumpy()  # (N, H, W, 3) RGB
+
+    for i, frame in enumerate(frames):
+        frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+        out_path = os.path.join(outpath, f'{str(frame_ix_synced[i]).zfill(zfill)}.jpg')
+        cv2.imwrite(out_path, frame_bgr)
+
+    return video_info
 

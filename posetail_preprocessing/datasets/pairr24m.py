@@ -9,7 +9,7 @@ import pandas as pd
 from tqdm import tqdm
 
 from posetail_preprocessing.datasets import BaseDataset
-from posetail_preprocessing.utils import io, assemble_extrinsics
+from posetail_preprocessing.utils import io, assemble_extrinsics, best_movement_window
 
 class PairR24MDataset(BaseDataset): 
 
@@ -107,27 +107,64 @@ class PairR24MDataset(BaseDataset):
         return df
     
 
-    def select_splits(self, split_dict = None, split_frames_dict = None, 
+    def _score_movement_for_splits(self, splits, split_frames_dict, chunk_size=3500):
+        self.metadata['movement_start_frame'] = 0
+        self.metadata['movement_score'] = 0.0
+
+        for session in self.metadata['session'].unique():
+            session_mask = self.metadata['session'] == session
+            session_rows = self.metadata[session_mask]
+
+            rows_to_score = session_rows[session_rows['split'].isin(splits)]
+            if rows_to_score.empty:
+                continue
+
+            data_path = os.path.join(self.dataset_path, session, 'markerDataset.csv')
+            if not os.path.isfile(data_path):
+                continue
+
+            # load with both subjects so movement reflects full scene
+            pose_dict = self.load_pose3d(data_path, fmt=self.keypoint_format)
+            pose = pose_dict['pose']  # (2, T, kpts, 3)
+
+            for idx, row in rows_to_score.iterrows():
+                w = split_frames_dict.get(row['split'], chunk_size)
+                start_frame = int(row['id'].split('_')[1])
+                ms, score = best_movement_window(
+                    pose, w,
+                    frame_start=start_frame,
+                    frame_end=min(start_frame + chunk_size, pose.shape[1]))
+                self.metadata.at[idx, 'movement_start_frame'] = ms
+                self.metadata.at[idx, 'movement_score'] = score
+
+    def select_splits(self, split_dict = None, split_frames_dict = None,
                       random_state = 3):
-        
+
         self.split_frames_dict = split_frames_dict
 
         val_mask = (self.metadata['session'].str.contains('SR9') &
                     self.metadata['session'].str.contains('SR11'))
-        
-        test_mask = (self.metadata['session'].str.contains('SR10') & 
+
+        test_mask = (self.metadata['session'].str.contains('SR10') &
                      self.metadata['session'].str.contains('SR11'))
-        
-        nan_mask = (self.metadata['session'].str.contains('SR9') & 
+
+        nan_mask = (self.metadata['session'].str.contains('SR9') &
                     self.metadata['session'].str.contains('SR10'))
 
         self.metadata.loc[val_mask, 'split'] = 'val'
         self.metadata.loc[test_mask, 'split'] = 'test'
         self.metadata.loc[nan_mask, 'split'] = None
 
-        if split_dict: 
+        train_val_splits = [s for s in (split_dict or {}) if s != 'test']
+        if split_frames_dict and train_val_splits:
+            self._score_movement_for_splits(train_val_splits, split_frames_dict)
+
+        if split_dict:
             for split, n in split_dict.items():
-                self._select_subset_for_split(split = split, n = n, random_state = random_state)
+                if split in train_val_splits:
+                    self._select_subset_by_movement(split=split, n=n)
+                else:
+                    self._select_subset_for_split(split=split, n=n, random_state=random_state)
 
         return self.metadata
 
@@ -277,38 +314,42 @@ class PairR24MDataset(BaseDataset):
         pose = pose_dict['pose']
 
         # traverse the trials
-        for start_frame in start_frames: 
-           
-            # skip video if metadata excludes it 
+        for start_frame in start_frames:
+
+            # skip video if metadata excludes it
             df = metadata[metadata['id'] == f'{id}_{start_frame}']
             if df.empty or not df['include'].values[0]:
-                # print('skipping...')
                 continue
 
-            # load and format the 3d annotations
             trial_outpath = os.path.join(outpath, str(start_frame))
 
-            if split_frames:
-                pose_subset = pose[:, start_frame:start_frame + split_frames, :, :]
+            # for train/val use movement-selected window; test uses raw start_frame
+            if split != 'test' and 'movement_start_frame' in df.columns:
+                pose_start = int(df['movement_start_frame'].values[0])
             else:
-                pose_subset = pose[:, start_frame:start_frame + chunk_size, :, :]
+                pose_start = start_frame
 
-            pose_dict_subset = {'pose': pose_subset, 
+            if split_frames:
+                pose_subset = pose[:, pose_start:pose_start + split_frames, :, :]
+            else:
+                pose_subset = pose[:, pose_start:pose_start + chunk_size, :, :]
+
+            pose_dict_subset = {'pose': pose_subset,
                                 'keypoints': pose_dict['keypoints']}
             io.save_npz(pose_dict_subset, trial_outpath, fname = 'pose3d')
 
             # put videos/frames in the desired format
-            if split == 'test':  
-                # for test set, save as videos
+            if split == 'test':
                 video_info = self._process_session_test(
-                    session_path, trial_outpath, 
+                    session_path, trial_outpath,
                     cam_names, start_frame)
             else:
-                # for train and validation sets, deserialize the camera videos 
-                # and save as images  
+                # local offset within the per-trial mp4 (named {start_frame}.mp4)
+                local_offset = pose_start - start_frame
                 video_info = self._process_session_train(
-                    session_path, trial_outpath, 
-                    cam_names, start_frame, split_frames)
+                    session_path, trial_outpath,
+                    cam_names, start_frame, split_frames,
+                    local_offset=local_offset)
 
             calib_dict = {
                 'intrinsic_matrices': intrinsics, 
@@ -322,26 +363,27 @@ class PairR24MDataset(BaseDataset):
                          fname = 'metadata.yaml')
             
 
-    def _process_session_train(self, video_dir, trial_outpath, 
-                               cam_names, start_frame, split_frames = None): 
+    def _process_session_train(self, video_dir, trial_outpath,
+                               cam_names, start_frame, split_frames=None,
+                               local_offset=0):
 
-        # deserialize the camera videos and save as images 
         cam_height_dict = {}
         cam_width_dict = {}
         num_frames = []
         fps = []
 
-        for cam_name in cam_names: 
+        n_frames = split_frames if split_frames else 3500
+        frame_indices = list(range(local_offset, local_offset + n_frames))
+        synced_indices = list(range(n_frames))
+
+        for cam_name in cam_names:
 
             cam_video_path = os.path.join(video_dir, 'videos', cam_name, f'{start_frame}.mp4')
             cam_outpath = os.path.join(trial_outpath, 'img', cam_name)
-            os.makedirs(cam_outpath, exist_ok = True)
 
-            video_info = io.deserialize_video(
-                cam_video_path, 
-                cam_outpath, 
-                start_frame = 0, 
-                debug_ix = split_frames)
+            video_info = io.save_frames_decord(
+                cam_video_path, frame_indices, cam_outpath,
+                frame_ix_synced=synced_indices)
 
             cam_height_dict[cam_name] = video_info['camera_heights']
             cam_width_dict[cam_name] = video_info['camera_widths']
@@ -349,8 +391,8 @@ class PairR24MDataset(BaseDataset):
             fps.append(video_info['fps'])
 
         video_info = {
-            'cam_heights': cam_height_dict, 
-            'cam_widths': cam_width_dict, 
+            'cam_heights': cam_height_dict,
+            'cam_widths': cam_width_dict,
             'num_frames': min(num_frames),
             'fps': min(fps)
         }

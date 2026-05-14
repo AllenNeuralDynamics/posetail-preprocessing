@@ -10,7 +10,7 @@ from itertools import chain
 from tqdm import tqdm
 
 from posetail_preprocessing.datasets import BaseDataset
-from posetail_preprocessing.utils import io, assemble_extrinsics, filter_coords
+from posetail_preprocessing.utils import io, assemble_extrinsics, filter_coords, best_movement_window
 
 
 class CMUPanopticDataset(BaseDataset): 
@@ -157,7 +157,26 @@ class CMUPanopticDataset(BaseDataset):
         return df
 
 
-    def select_splits(self, split_dict = None, split_frames_dict = None, 
+    def _score_movement_for_splits(self, splits, split_frames_dict):
+        self.metadata['movement_start_frame'] = 0
+        self.metadata['movement_score'] = 0.0
+        self.metadata['pose_start_offset'] = 0
+
+        rows_to_score = self.metadata[self.metadata['split'].isin(splits)]
+
+        for idx, row in rows_to_score.iterrows():
+            session_path = os.path.join(self.dataset_path, row['session'])
+            pose_dict = self.load_pose3d(session_path)
+            common_start = pose_dict['start_frame']
+            pose = pose_dict['pose']
+
+            w = split_frames_dict.get(row['split'], pose.shape[1])
+            ms, score = best_movement_window(pose, w)
+            self.metadata.at[idx, 'movement_start_frame'] = ms
+            self.metadata.at[idx, 'movement_score'] = score
+            self.metadata.at[idx, 'pose_start_offset'] = common_start
+
+    def select_splits(self, split_dict = None, split_frames_dict = None,
                       random_state = 3):
 
         self.split_frames_dict = split_frames_dict
@@ -168,9 +187,16 @@ class CMUPanopticDataset(BaseDataset):
         for i, sessions in enumerate(session_splits):
             self.metadata.loc[self.metadata['session'].isin(sessions), 'split'] = splits[i]
 
-        if split_dict: 
+        train_val_splits = [s for s in (split_dict or {}) if s != 'test']
+        if split_frames_dict and train_val_splits:
+            self._score_movement_for_splits(train_val_splits, split_frames_dict)
+
+        if split_dict:
             for split, n in split_dict.items():
-                self._select_subset_for_split(split = split, n = n, random_state = random_state)
+                if split in train_val_splits:
+                    self._select_subset_by_movement(split=split, n=n)
+                else:
+                    self._select_subset_for_split(split=split, n=n, random_state=random_state)
 
         return self.metadata
 
@@ -402,7 +428,7 @@ class CMUPanopticDataset(BaseDataset):
             # print(f'no keypoint data for session {session}')
             process = False
 
-        if process: 
+        if process:
 
             # process the session
             os.makedirs(outpath, exist_ok = True)
@@ -411,21 +437,29 @@ class CMUPanopticDataset(BaseDataset):
             pose_dict = self.load_pose3d(session_path)
             common_start = pose_dict.pop('start_frame')
             common_end = pose_dict.pop('end_frame')
-            pose_dict = self._subset_pose_dict(pose_dict, n_frames = split_frames)
+
+            # for train/val use movement-selected window; test uses full aligned range
+            if split != 'test' and 'movement_start_frame' in df.columns:
+                movement_start = int(df['movement_start_frame'].values[0])
+            else:
+                movement_start = 0
+
+            pose_dict = self._subset_pose_dict(pose_dict, start_frame=movement_start, n_frames=split_frames)
             io.save_npz(pose_dict, outpath, fname = 'pose3d')
 
             # put videos/frames in the desired format
-            if split == 'test':  
-                # for test set, save as videos
+            if split == 'test':
+                # for test set, save as videos (unchanged)
                 video_info = self._process_session_test(
-                    session_path, outpath, cam_names, 
+                    session_path, outpath, cam_names,
                     common_start, common_end)
             else:
-                # for train and validation sets, deserialize the camera videos 
-                # and save as images  
+                # camera frame range for the chosen window
+                chunk_start = common_start + movement_start
+                chunk_end = chunk_start + (split_frames if split_frames else common_end - common_start)
                 video_info = self._process_session_train(
-                    session_path, outpath, cam_names, 
-                    split_frames, common_start, common_end)
+                    session_path, outpath, cam_names,
+                    chunk_start, chunk_end)
 
             cam_dict = {
                 'intrinsic_matrices': intrinsics, 
@@ -439,36 +473,35 @@ class CMUPanopticDataset(BaseDataset):
                     fname = 'metadata.yaml')
 
     def _process_session_train(self, session_path, trial_outpath, cam_names,
-                               split_frames = None, start_frame = None, end_frame = None):
+                               start_frame, end_frame):
 
-        # copy image folders to new outpath
         cam_height_dict = {}
         cam_width_dict = {}
         num_frames = []
         fps = []
+
+        frame_indices = list(range(start_frame, end_frame))
+        synced_indices = list(range(len(frame_indices)))
 
         for cam_name in cam_names:
 
             cam_video_path = os.path.join(session_path, 'hdVideos', f'hd_{cam_name}.mp4')
             cam_outpath = os.path.join(trial_outpath, 'img', cam_name)
 
-            video_info = io.deserialize_video_with_alignment(
-                cam_video_path, 
-                cam_outpath, 
-                start_frame = start_frame,
-                end_frame = end_frame, 
-                debug_ix = split_frames)
+            video_info = io.save_frames_decord(
+                cam_video_path, frame_indices, cam_outpath,
+                frame_ix_synced=synced_indices)
 
-        cam_height_dict[cam_name] = video_info['camera_heights']
-        cam_width_dict[cam_name] = video_info['camera_widths']
-        num_frames.append(video_info['num_frames'])
-        fps.append(video_info['fps'])
+            cam_height_dict[cam_name] = video_info['camera_heights']
+            cam_width_dict[cam_name] = video_info['camera_widths']
+            num_frames.append(video_info['num_frames'])
+            fps.append(video_info['fps'])
 
         video_info = {
-            'cam_heights': cam_height_dict, 
-            'cam_widths': cam_width_dict, 
-            'num_frames': num_frames,
-            'fps': fps
+            'cam_heights': cam_height_dict,
+            'cam_widths': cam_width_dict,
+            'num_frames': min(num_frames),
+            'fps': min(fps)
         }
 
         return video_info

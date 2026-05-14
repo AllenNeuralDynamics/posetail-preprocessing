@@ -10,7 +10,7 @@ from collections import defaultdict
 from tqdm import tqdm
 
 from posetail_preprocessing.datasets import BaseDataset
-from posetail_preprocessing.utils import io, assemble_extrinsics, filter_coords
+from posetail_preprocessing.utils import io, assemble_extrinsics, filter_coords, best_movement_window
 
 
 class Rat7MDataset(BaseDataset): 
@@ -115,20 +115,54 @@ class Rat7MDataset(BaseDataset):
         return df
     
     
-    def select_splits(self, split_dict = None, split_frames_dict = None, 
+    def _score_movement_for_splits(self, splits, split_frames_dict, chunk_size=3500):
+        self.metadata['movement_start_frame'] = 0
+        self.metadata['movement_score'] = 0.0
+
+        for session in self.metadata['session'].unique():
+            session_mask = self.metadata['session'] == session
+            session_rows = self.metadata[session_mask]
+
+            # only score rows in the requested splits
+            rows_to_score = session_rows[session_rows['split'].isin(splits)]
+            if rows_to_score.empty:
+                continue
+
+            data_path = os.path.join(self.dataset_path, 'data', f'mocap-{session}.mat')
+            pose_dict = self.load_pose3d(data_path)
+            pose = pose_dict['pose']  # (1, T, kpts, 3)
+
+            for idx, row in rows_to_score.iterrows():
+                w = split_frames_dict.get(row['split'], chunk_size)
+                start_frame = int(row['id'].split('_')[1])
+                ms, score = best_movement_window(
+                    pose, w,
+                    frame_start=start_frame,
+                    frame_end=min(start_frame + chunk_size, pose.shape[1]))
+                self.metadata.at[idx, 'movement_start_frame'] = ms
+                self.metadata.at[idx, 'movement_score'] = score
+
+    def select_splits(self, split_dict = None, split_frames_dict = None,
                       random_state = 3):
-        
+
         self.split_frames_dict = split_frames_dict
-        
-        subject_splits = [{'s1', 's2', 's3'},  {'s4'},  {'s5'}]
+
+        subject_splits = [{'s1', 's2', 's3'}, {'s4'}, {'s5'}]
         splits = ['train', 'val', 'test']
 
         for i, subjects in enumerate(subject_splits):
             self.metadata.loc[self.metadata['subject'].isin(subjects), 'split'] = splits[i]
-        
-        if split_dict: 
+
+        train_val_splits = [s for s in (split_dict or {}) if s != 'test']
+        if split_frames_dict and train_val_splits:
+            self._score_movement_for_splits(train_val_splits, split_frames_dict)
+
+        if split_dict:
             for split, n in split_dict.items():
-                self._select_subset_for_split(split = split, n = n, random_state = random_state)
+                if split in train_val_splits:
+                    self._select_subset_by_movement(split=split, n=n)
+                else:
+                    self._select_subset_for_split(split=split, n=n, random_state=random_state)
 
         return self.metadata
     
@@ -295,27 +329,30 @@ class Rat7MDataset(BaseDataset):
         pose = pose_dict['pose']
 
         # traverse the trials
-        for start_frame in start_frames: 
+        for start_frame in start_frames:
 
             # get starting frame
             trial_outpath = os.path.join(outpath, str(start_frame).zfill(6))
 
-            # skip video if metadata excludes it 
+            # skip video if metadata excludes it
             df = metadata[metadata['id'] == f'{session}_{start_frame}']
-            if df.empty or not df['include'].values[0]: 
-                # print('skipping...')
+            if df.empty or not df['include'].values[0]:
                 continue
 
             # skip if there aren't many frames remaining
-            # NOTE: could also use a threshold
             if start_frame >= pose.shape[1]:
                 continue
-             
-            # load and format the 3d annotations
-            if split_frames:
-                pose_subset = pose[:, start_frame:start_frame + split_frames, :, :]
+
+            # for train/val use the movement-selected window; test uses the raw start_frame
+            if split != 'test' and 'movement_start_frame' in df.columns:
+                pose_start = int(df['movement_start_frame'].values[0])
             else:
-                pose_subset = pose[:, start_frame:start_frame + chunk_size, :, :]
+                pose_start = start_frame
+
+            if split_frames:
+                pose_subset = pose[:, pose_start:pose_start + split_frames, :, :]
+            else:
+                pose_subset = pose[:, pose_start:pose_start + chunk_size, :, :]
 
             pose_dict_subset = {'pose': pose_subset, 
                                 'keypoints': pose_dict['keypoints']}
@@ -323,19 +360,18 @@ class Rat7MDataset(BaseDataset):
             io.save_npz(pose_dict_subset, trial_outpath, fname = 'pose3d')
 
             # put videos/frames in the desired format
-            if split == 'test':  
+            if split == 'test':
                 # for test set, save as videos
                 video_info = self._process_session_test(
-                    session_path, trial_outpath, 
-                    session, start_frame, start_frames, 
+                    session_path, trial_outpath,
+                    session, start_frame, start_frames,
                     sync_dict, chunk_size = chunk_size)
             else:
-                # for train and validation sets, deserialize the camera videos 
-                # and save as images  
+                # for train and validation sets, extract frames via decord
                 video_info = self._process_session_train(
-                    session_path, trial_outpath, 
-                    session, start_frame, start_frames, 
-                    sync_dict, split_frames, 
+                    session_path, trial_outpath,
+                    session, pose_start, start_frames,
+                    sync_dict, split_frames,
                     chunk_size = chunk_size)
 
             calib_dict = {
@@ -351,47 +387,49 @@ class Rat7MDataset(BaseDataset):
                     fname = 'metadata.yaml')
             
 
-    def _process_session_train(self, session_path, trial_outpath, 
-                              session, start_frame, start_frames, 
-                              sync_dict, split_frames, chunk_size = 3500): 
-            
-        # save video/image data in the expected format
+    def _process_session_train(self, session_path, trial_outpath,
+                              session, start_frame, start_frames,
+                              sync_dict, split_frames, chunk_size = 3500):
+
         cam_names = list(sync_dict.keys())
         cam_height_dict = {}
         cam_width_dict = {}
         num_frames = []
         fps = []
 
-        for cam_name in cam_names: 
+        n_frames = split_frames if split_frames else chunk_size
 
-            # get frames for synchronization
-            cam_frames = sync_dict[cam_name][start_frame:start_frame + chunk_size]
+        for cam_name in cam_names:
 
-            # save deserialized frames 
-            for i, frame in enumerate(cam_frames): 
+            # camera-specific global frame indices for this window
+            cam_frames = sync_dict[cam_name][start_frame:start_frame + n_frames]
+            cam_outpath = os.path.join(trial_outpath, 'img', cam_name)
 
-                if split_frames and i == split_frames:
-                    break
-
-                video_ix = frame // chunk_size
+            # group indices by which mp4 file they live in
+            groups = defaultdict(list)  # video_start_frame -> [(in_file_ix, synced_ix)]
+            for synced_ix, global_frame in enumerate(cam_frames):
+                video_ix = global_frame // chunk_size
                 cam_start_frame = start_frames[video_ix]
-                cam_video_path = os.path.join(session_path, f'{session}-{cam_name}-{cam_start_frame}.mp4')
-                cam_outpath = os.path.join(trial_outpath, 'img', cam_name)
+                groups[cam_start_frame].append((global_frame - cam_start_frame, synced_ix))
 
-                video_info = io.save_frame_synced(
-                    video_path = cam_video_path, 
-                    outpath = cam_outpath, 
-                    frame_ix = frame - cam_start_frame, 
-                    frame_ix_synced = i)
-            
+            video_info = None
+            for cam_start_frame, pairs in sorted(groups.items()):
+                in_file_indices = [p[0] for p in pairs]
+                synced_indices = [p[1] for p in pairs]
+                cam_video_path = os.path.join(session_path, f'{session}-{cam_name}-{cam_start_frame}.mp4')
+                video_info = io.save_frames_decord(
+                    cam_video_path, in_file_indices, cam_outpath,
+                    frame_ix_synced=synced_indices)
+
+            if video_info:
                 cam_height_dict[cam_name] = video_info['camera_heights']
                 cam_width_dict[cam_name] = video_info['camera_widths']
                 num_frames.append(video_info['num_frames'])
                 fps.append(video_info['fps'])
 
         video_info = {
-            'cam_heights': cam_height_dict, 
-            'cam_widths': cam_width_dict, 
+            'cam_heights': cam_height_dict,
+            'cam_widths': cam_width_dict,
             'num_frames': min(num_frames),
             'fps': min(fps)
         }

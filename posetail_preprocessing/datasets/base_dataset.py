@@ -46,20 +46,35 @@ class BaseDataset(ABC):
 
         return pose_dict
 
-    def _select_subset_for_split(self, split, n = None, random_state = 3): 
+    def _select_subset_for_split(self, split, n = None, random_state = 3):
 
         # check number of videos in the split
         split_mask = self.metadata['split'] == split
         n_rows = len(self.metadata.loc[split_mask])
 
-        # handle the case where None is passed for n, 
+        # handle the case where None is passed for n,
         # use all the data
-        if n is None: 
+        if n is None:
             n = n_rows
 
-        # only sample when we have more rows available than the number 
-        # we are sampling 
-        if n_rows and n_rows > n: 
+        # only sample when we have more rows available than the number
+        # we are sampling
+        if n_rows and n_rows > n:
             self.metadata.loc[split_mask, 'include'] = False
             split_ixs = self.metadata.loc[split_mask].sample(n = n, random_state = random_state).index
             self.metadata.loc[split_ixs, 'include'] = True
+
+    def _select_subset_by_movement(self, split, n = None):
+        """Select the top-n rows for split ranked by movement_score (descending)."""
+
+        split_mask = self.metadata['split'] == split
+        n_rows = len(self.metadata.loc[split_mask])
+
+        if n is None:
+            n = n_rows
+
+        if n_rows and n_rows > n:
+            self.metadata.loc[split_mask, 'include'] = False
+            top_ixs = (self.metadata.loc[split_mask]
+                       .nlargest(n, 'movement_score').index)
+            self.metadata.loc[top_ixs, 'include'] = True

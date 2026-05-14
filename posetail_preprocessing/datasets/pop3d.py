@@ -10,7 +10,7 @@ import pandas as pd
 from tqdm import tqdm
 
 from posetail_preprocessing.datasets import BaseDataset
-from posetail_preprocessing.utils import io, assemble_extrinsics
+from posetail_preprocessing.utils import io, assemble_extrinsics, best_movement_window
 
 
 class POPDataset(BaseDataset): 
@@ -113,15 +113,58 @@ class POPDataset(BaseDataset):
         return df
 
 
-    def select_splits(self, split_dict = None, split_frames_dict = None, 
+    def _score_movement_for_splits(self, splits, split_frames_dict):
+        self.metadata['movement_start_frame'] = 0
+        self.metadata['movement_score'] = 0.0
+
+        # build session -> subject_count mapping (mirrors generate_dataset structure)
+        session_to_subject = {}
+        for subject_count in io.get_dirs(self.dataset_path):
+            if subject_count in {'Markerless', 'N6000', 'SinglePigeon'}:
+                continue
+            for session in io.get_dirs(os.path.join(self.dataset_path, subject_count)):
+                session_to_subject[session] = subject_count
+
+        rows_to_score = self.metadata[self.metadata['split'].isin(splits)]
+
+        for idx, row in rows_to_score.iterrows():
+            session = row['session']
+            split = row['split']
+            subject_count = session_to_subject.get(session)
+            if subject_count is None:
+                continue
+
+            split_path = os.path.join(
+                self.dataset_path, subject_count, session,
+                'TrainingSplit', split.capitalize())
+
+            data_paths = glob.glob(os.path.join(split_path, '*Keypoint3D.csv'))
+            if not data_paths:
+                continue
+
+            pose_dict = self.load_pose3d(data_paths[0])
+            pose = pose_dict['pose']
+
+            w = split_frames_dict.get(split, pose.shape[1])
+            ms, score = best_movement_window(pose, w)
+            self.metadata.at[idx, 'movement_start_frame'] = ms
+            self.metadata.at[idx, 'movement_score'] = score
+
+    def select_splits(self, split_dict = None, split_frames_dict = None,
                       random_state = 3):
-        
+
         self.split_frames_dict = split_frames_dict
 
-        # splits were mostly processed in self._get_splits
-        if split_dict: 
+        train_val_splits = [s for s in (split_dict or {}) if s != 'test']
+        if split_frames_dict and train_val_splits:
+            self._score_movement_for_splits(train_val_splits, split_frames_dict)
+
+        if split_dict:
             for split, n in split_dict.items():
-                self._select_subset_for_split(split = split, n = n, random_state = random_state)
+                if split in train_val_splits:
+                    self._select_subset_by_movement(split=split, n=n)
+                else:
+                    self._select_subset_for_split(split=split, n=n, random_state=random_state)
 
         return self.metadata
 
@@ -221,12 +264,20 @@ class POPDataset(BaseDataset):
     
         # load and format the 3d annotations
         pose_dict = self.load_pose3d(data_path)
-        pose_dict = self._subset_pose_dict(pose_dict, n_frames = split_frames)
 
         # reconstruct the id
         id = f'{session}_{split.capitalize()}'
 
-        # skip video if metadata excludes it 
+        # for train/val use movement-selected window; test uses first N frames
+        if split != 'test' and 'movement_start_frame' in self.metadata.columns:
+            df_row = self.metadata[self.metadata['id'] == id]
+            movement_start = int(df_row['movement_start_frame'].values[0]) if not df_row.empty else 0
+        else:
+            movement_start = 0
+
+        pose_dict = self._subset_pose_dict(pose_dict, start_frame=movement_start, n_frames=split_frames)
+
+        # skip video if metadata excludes it
         process = True
         df = metadata[metadata['id'] == id]
         if df.empty or not df['include'].values[0]: 
@@ -239,17 +290,14 @@ class POPDataset(BaseDataset):
             io.save_npz(pose_dict, trial_outpath, fname = 'pose3d')
 
             # put videos/frames in the desired format
-            if split == 'test':  
-                # for test set, save as videos
+            if split == 'test':
                 video_info = self._process_session_test(
                     split_path, trial_outpath, session, cam_names)
             else:
-                # for train and validation sets, deserialize the camera videos 
-                # and save as images  
                 video_info = self._process_session_train(
-                    split_path, trial_outpath, session, 
-                    cam_names, split_frames = split_frames
-                )
+                    split_path, trial_outpath, session,
+                    cam_names, split_frames=split_frames,
+                    start_frame=movement_start)
 
             calib_dict = {
                 'intrinsic_matrices': intrinsics, 
@@ -263,25 +311,32 @@ class POPDataset(BaseDataset):
                     fname = 'metadata.yaml')
 
 
-    def _process_session_train(self, split_path, trial_outpath, 
-                               session, cam_names, split_frames = None): 
+    def _process_session_train(self, split_path, trial_outpath,
+                               session, cam_names, split_frames=None,
+                               start_frame=0):
 
-        # deserialize the camera videos and save as images 
         cam_height_dict = {}
         cam_width_dict = {}
         num_frames = []
         fps = []
 
-        for cam_name in cam_names: 
+        n_frames = split_frames if split_frames else None
+
+        for cam_name in cam_names:
 
             cam_video_path = os.path.join(split_path, f'{session}-{cam_name}.mp4')
             cam_outpath = os.path.join(trial_outpath, 'img', cam_name)
 
-            video_info = io.deserialize_video(
-                cam_video_path, 
-                cam_outpath, 
-                start_frame = 0, 
-                debug_ix = split_frames)
+            if n_frames is None:
+                # fall back to full video read if no frame count specified
+                video_info = io.deserialize_video(
+                    cam_video_path, cam_outpath, start_frame=0)
+            else:
+                frame_indices = list(range(start_frame, start_frame + n_frames))
+                synced_indices = list(range(n_frames))
+                video_info = io.save_frames_decord(
+                    cam_video_path, frame_indices, cam_outpath,
+                    frame_ix_synced=synced_indices)
 
             cam_height_dict[cam_name] = video_info['camera_heights']
             cam_width_dict[cam_name] = video_info['camera_widths']
@@ -289,8 +344,8 @@ class POPDataset(BaseDataset):
             fps.append(video_info['fps'])
 
         video_info = {
-            'cam_heights': cam_height_dict, 
-            'cam_widths': cam_width_dict, 
+            'cam_heights': cam_height_dict,
+            'cam_widths': cam_width_dict,
             'num_frames': min(num_frames),
             'fps': min(fps)
         }

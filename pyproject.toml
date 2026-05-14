@@ -7,6 +7,7 @@ name = "posetail-preprocessing"
 version = "0.8.0"
 dependencies = [
     "aniposelib>=0.7.0",
+    "decord>=0.6.0",
     "easydict==1.13",
     "json5==0.12.1",
     "opencv-python==4.9.0.80",
@@ -28,6 +29,9 @@ classifiers = [
 
 [project.urls]
 Repository = "https://github.com/AllenNeuralDynamics/posetail-preprocessing"
+
+[tool.setuptools.packages.find]
+include = ["posetail_preprocessing*"]
 
 [tool.pixi.workspace]
 channels = ["conda-forge"]
