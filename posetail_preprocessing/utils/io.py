@@ -297,3 +297,54 @@ def save_frames_decord(video_path, frame_indices, outpath,
     video_info['frames_written'] = len(frame_indices)
     return video_info
 
+
+def save_frames_pyav(video_path, start_frame, n_frames, outpath, zfill=6):
+    """Extract ``n_frames`` consecutive frames starting at ``start_frame`` via PyAV.
+
+    decord misbehaves on some mp4s (e.g. the Johnson-lab fly recordings), so this
+    seek-and-decode helper mirrors the PyAV pattern in
+    ``JARVIS-HybridNet/scripts/visualize_bouts.py``: seek to at/just-before the
+    target frame, then decode forward, skipping until ``frame_idx >= start_frame``.
+    This is frame-accurate and avoids decoding from frame 0 on multi-GB files.
+
+    Writes JPGs named ``000000.jpg`` ... (relative to start_frame) and returns a
+    ``video_info`` dict matching ``get_video_info`` plus ``frames_written``.
+    """
+    import av
+
+    os.makedirs(outpath, exist_ok=True)
+
+    container = av.open(video_path)
+    stream = container.streams.video[0]
+    stream.thread_type = 'AUTO'
+    fps = float(stream.average_rate)
+    time_base = float(stream.time_base)
+
+    video_info = {
+        'camera_heights': int(stream.height),
+        'camera_widths': int(stream.width),
+        'num_frames': int(stream.frames),
+        'fps': fps,
+    }
+
+    # seek to at/just-before start_frame (lands on a keyframe)
+    ts = int(start_frame / fps / time_base)
+    container.seek(ts, stream=stream)
+
+    written = 0
+    for frame in container.decode(video=0):
+        frame_idx = round(frame.pts * time_base * fps)
+        if frame_idx < start_frame:
+            continue
+        if written >= n_frames:
+            break
+        frame_bgr = frame.to_ndarray(format='bgr24')
+        out_name = str(written).zfill(zfill) + '.jpg'
+        cv2.imwrite(os.path.join(outpath, out_name), frame_bgr)
+        written += 1
+
+    container.close()
+
+    video_info['frames_written'] = written
+    return video_info
+

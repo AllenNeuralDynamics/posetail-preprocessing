@@ -8,6 +8,7 @@ from .cmupanoptic_3dgs import CMUPanopticGSDataset
 from .dex_ycb import DexYCBDataset
 from .duke_mouse import DukeMouseDataset
 from .johnson_mouse import JohnsonMouseDataset
+from .johnson_fly import JohnsonFlyDataset
 from .jarvis_monkey import JarvisMonkeyDataset
 from .voigts_mouse import VoigtsMouseDataset
 from .kubric_multiview import KubricMultiviewDataset

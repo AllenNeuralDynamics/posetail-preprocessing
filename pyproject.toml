@@ -7,10 +7,13 @@ name = "posetail-preprocessing"
 version = "0.8.0"
 dependencies = [
     "aniposelib>=0.7.0",
+    "av>=10.0.0",
     "decord>=0.6.0",
     "easydict==1.13",
     "json5==0.12.1",
     "opencv-python==4.9.0.80",
+    "polars>=1.0.0",
+    "scipy>=1.10",
     "toml==0.10.2",
     "einops>=0.8.2,<0.9",
     "pyyaml>=6.0.3,<7"]

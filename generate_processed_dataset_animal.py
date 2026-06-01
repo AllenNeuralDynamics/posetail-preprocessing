@@ -14,6 +14,7 @@ from posetail_preprocessing.datasets import (
     DexYCBDataset,
     JarvisMonkeyDataset,
     JohnsonMouseDataset,
+    JohnsonFlyDataset,
     KubricMultiviewDataset,
     PairR24MDataset,
     POPDataset,
@@ -247,7 +248,45 @@ def generate_johnson_mouse(prefix, out_prefix,
 
     dataset.generate_dataset()    
 
-def generate_jarvis_monkey(prefix, out_prefix, 
+def generate_johnson_fly(out_prefix, dataset_name = 'johnson-fly',
+                         random_state = 3, debug = False):
+
+    '''
+    generates the preprocessed johnson fly (walking) dataset
+
+    Orthographic 7-camera rig. Bouts are detected from the predictor output,
+    cropped (first/last 300 frames dropped), and split: every cropped bout
+    except the last -> train (all frames); last bout -> val (first 64 frames)
+    + test (remainder). Paths are absolute, so no `prefix` is needed.
+    '''
+
+    print(f'\ngenerating {dataset_name}...')
+
+    data = [{
+        "predictions": "/groups/johnson/johnsonlab/Elliott_Abe/fly50_predictions_Jan23/walking/fly50_pred_Jan23/Predictions_3D_20260124-143752",
+        "recording": "/groups/johnson/johnsonlab/Elliott_Abe/FlyData/fly_walking/2025_10_12_15_06_46",
+        "calibration": "/groups/johnson/johnsonlab/Elliott_Abe/FlyData/fly_walking/2025_10_12_15_06_46/calibration",
+        "start": 0,
+        "number": 86000,
+    }]
+
+    dataset_outpath = os.path.join(out_prefix, dataset_name)
+
+    dataset = JohnsonFlyDataset(
+        dataset_path = None,
+        dataset_outpath = dataset_outpath,
+        data = data,
+        dataset_name = dataset_name)
+
+    df = dataset.generate_metadata()
+
+    # splits are fixed by bout detection inside generate_metadata
+    df = dataset.select_splits(random_state = random_state)
+
+    dataset.generate_dataset(splits = {'train', 'val', 'test'})
+
+
+def generate_jarvis_monkey(prefix, out_prefix,
                          dataset_name = 'jarvis-monkey', 
                          random_state = 3, debug = False):
 
@@ -568,7 +607,8 @@ if __name__ == '__main__':
     # generate_cmupanoptic(prefix, out_prefix, kpt_prefix = kpt_prefix, random_state = random_state, debug = debug)
     # generate_johnson_mouse(prefix, out_prefix, random_state = random_state, debug = debug)
     # generate_jarvis_monkey(prefix, out_prefix, random_state = random_state, debug = debug)
-    generate_voigts_mouse(prefix, out_prefix, random_state = random_state, debug = debug)
+    generate_johnson_fly(out_prefix, random_state = random_state, debug = debug)
+    # generate_voigts_mouse(prefix, out_prefix, random_state = random_state, debug = debug)
     # generate_sober_bird(prefix, out_prefix, random_state = random_state, debug = debug)
     
     # purely test datasets
