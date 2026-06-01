@@ -189,41 +189,48 @@ def generate_sober_bird(prefix, out_prefix,
 
     dataset.generate_dataset(splits = splits)
 
-def generate_allen_mouse(prefix, out_prefix, 
-                         dataset_name = 'allen-mouse', 
+def generate_allen_mouse(prefix, out_prefix,
+                         dataset_name = 'allen-mouse',
                          random_state = 3, debug = False):
 
-    ''' 
-    generates the preprocessed anipose fly dataset
+    '''
+    generates the preprocessed allen mouse dataset
+
+    Single recording (motor-observatory_717764_2024-12-03_10-47-14).
+    Chronological 80/10/10 split with multi-bout high-movement sampling.
+
+    train: 120 bouts * 500 frames = 60k frames/view
+    val:   1 bout   * 32 frames   = 32 frames/view
+    test:  1 bout   * 500 frames  = 500 frames/view
     '''
 
     print(f'\ngenerating {dataset_name}...')
-    dataset_path = os.path.join(prefix, dataset_name)
+    dataset_path    = os.path.join(prefix, dataset_name)
     dataset_outpath = os.path.join(out_prefix, dataset_name)
 
     dataset = AllenMouseDataset(
-        dataset_path = dataset_path, 
-        dataset_outpath = dataset_outpath, 
-        dataset_name = dataset_name,
-        error_thresh = 5)
+        dataset_path    = dataset_path,
+        dataset_outpath = dataset_outpath,
+        dataset_name    = dataset_name,
+        error_thresh    = 5,
+        conf_thresh     = 0.7)
 
-    df = dataset.generate_metadata()
+    # n_bouts per split
+    split_dict        = {'train': 120, 'val': 1, 'test': 1}
+    # frames per bout
+    split_frames_dict = {'train': 500, 'val': 32, 'test': 500}
 
-    # sample 60k training frames, full training dataset
-    splits = {'train', 'val', 'test'}
-    # split_dict = {'train': 3, 'val': 2} # number of videos to sample from the dataset
-    # split_frames_dict = {'train': 16, 'val': 16} # number of consecutive frames per video to sample 
+    if debug:
+        split_dict        = {'train': 2, 'val': 1, 'test': 1}
+        split_frames_dict = {'train': 16, 'val': 8, 'test': 16}
 
-    split_dict = {'train': 18, 'val': 1} # number of videos to sample from the dataset
-    split_frames_dict = {'train': 3333, 'val': 32} # number of consecutive frames per video to sample
+    splits = list(split_dict.keys())
 
-    if debug: 
-        splits, split_dict, split_frames_dict = update_subsampling(splits)
-
-    df = dataset.select_splits(
-        split_dict = split_dict, 
-        split_frames_dict = split_frames_dict, 
-        random_state = random_state)
+    dataset.generate_metadata()
+    dataset.select_splits(
+        split_dict        = split_dict,
+        split_frames_dict = split_frames_dict,
+        random_state      = random_state)
 
     dataset.generate_dataset(splits = splits)
 
@@ -607,7 +614,8 @@ if __name__ == '__main__':
     # generate_cmupanoptic(prefix, out_prefix, kpt_prefix = kpt_prefix, random_state = random_state, debug = debug)
     # generate_johnson_mouse(prefix, out_prefix, random_state = random_state, debug = debug)
     # generate_jarvis_monkey(prefix, out_prefix, random_state = random_state, debug = debug)
-    generate_johnson_fly(out_prefix, random_state = random_state, debug = debug)
+    # generate_johnson_fly(out_prefix, random_state = random_state, debug = debug)
+    generate_allen_mouse(prefix, out_prefix, random_state = random_state, debug = debug)
     # generate_voigts_mouse(prefix, out_prefix, random_state = random_state, debug = debug)
     # generate_sober_bird(prefix, out_prefix, random_state = random_state, debug = debug)
     

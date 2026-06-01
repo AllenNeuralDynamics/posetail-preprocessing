@@ -47,3 +47,6 @@ posetail-preprocessing = { path = ".", editable = true }
 
 [tool.pixi.dependencies]
 ffmpeg = ">=8.0.1,<9"
+pytables = ">=3.6"
+numpy = "<2"
+pandas = ">=2,<2.3"
