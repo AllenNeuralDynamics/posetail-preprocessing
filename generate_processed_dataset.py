@@ -325,6 +325,41 @@ def generate_point_odyssey(prefix, out_prefix, dataset_name = 'point-odyssey-hum
 
     dataset.generate_dataset(splits = splits)
 
+def generate_point_odyssey_animal(prefix, out_prefix, dataset_name = 'point-odyssey-animal',
+                                  random_state = 3, debug = False):
+    '''
+    generates the preprocessed point odyssey multiview dataset
+
+    train: many sessions * T frames
+    val: 1 session (flat split, no subdirectory)
+    test: many sessions * T frames
+    '''
+
+    print(f'\ngenerating {dataset_name}...')
+    dataset_path = os.path.join(prefix, 'point-odyssey/results-animal')
+    dataset_outpath = os.path.join(out_prefix, dataset_name)
+
+    dataset = PointOdysseyMultiviewDataset(
+        dataset_path = dataset_path,
+        dataset_outpath = dataset_outpath,
+        dataset_name = dataset_name)
+
+    df = dataset.generate_metadata()
+
+    splits = {'train', 'val', 'test'}
+    split_dict = {'val': 1}
+    split_frames_dict = {'val': 32}
+
+    if debug:
+        splits, split_dict, split_frames_dict = update_subsampling(splits)
+
+    df = dataset.select_splits(
+        split_dict = split_dict,
+        split_frames_dict = split_frames_dict,
+        random_state = random_state)
+
+    dataset.generate_dataset(splits = splits)
+    
 
 def generate_pairr24m(prefix, out_prefix, dataset_name = 'pair-r24m',
                       random_state = 3, debug = False):
@@ -469,10 +504,11 @@ if __name__ == '__main__':
     # generate_pairr24m(prefix, out_prefix, random_state = random_state, debug = debug)
     # generate_3dpop(prefix, out_prefix, random_state = random_state, debug = debug)
     # generate_3dzef(prefix, out_prefix, random_state = random_state, debug = debug)
-    generate_cmupanoptic(prefix, out_prefix, kpt_prefix = kpt_prefix, random_state = random_state, debug = debug)
+    # generate_cmupanoptic(prefix, out_prefix, kpt_prefix = kpt_prefix, random_state = random_state, debug = debug)
 
     # purely test datasets
     # generate_cmupanoptic3dgs(prefix, out_prefix, random_state = random_state)
     # generate_dex_ycb(prefix, out_prefix, random_state = random_state) 
 
     # generate_point_odyssey(prefix, out_prefix, random_state=random_state)
+    generate_point_odyssey_animal(prefix, out_prefix, random_state=random_state)
