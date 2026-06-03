@@ -20,6 +20,7 @@ from posetail_preprocessing.datasets import (
     PairR24MDataset,
     POPDataset,
     Rat7MDataset,
+    RatCityDataset,
     SoberBirdDataset,
     VoigtsMouseDataset
 )
@@ -641,6 +642,35 @@ def generate_chimpact(out_prefix, dataset_name = 'chimpact',
     dataset.generate_dataset(splits = splits)
 
 
+def generate_rat_city(out_prefix, dataset_name='rat-city',
+                      dataset_path='/groups/branson/bransonlab/manan/cohort7_20251209_1659',
+                      random_state=3, debug=False):
+
+    '''
+    generates the preprocessed Rat City dataset (2D-only, single-view, multi-individual)
+
+    A single continuous recording (12 rats, 4 keypoints). Chronological 80/10/10 split:
+    train: full first 80% of frames as one contiguous bout
+    val:   64 frames just after the train region
+    test:  last 500 frames
+
+    output mirrors chimpact:
+        {out}/{split}/{clip}/ix{start}/{pose2d.npz, img/cam0/*.jpg}
+    '''
+
+    print(f'\ngenerating {dataset_name}...')
+    dataset_outpath = os.path.join(out_prefix, dataset_name)
+
+    dataset = RatCityDataset(
+        dataset_path=dataset_path,
+        dataset_outpath=dataset_outpath,
+        dataset_name=dataset_name)
+
+    dataset.generate_metadata()
+    dataset.select_splits()
+    dataset.generate_dataset(splits={'train', 'val', 'test'}, debug=debug)
+
+
 if __name__ == '__main__':
 
     # raw and processed data locations
@@ -664,7 +694,8 @@ if __name__ == '__main__':
     # generate_acinoset(prefix, oust_prefix, kpt_prefix = kpt_prefix, random_state = random_state, debug = debug)
     # generate_anipose_fly(prefix, out_prefix, dataset_name='tuthill-fly', random_state = random_state, debug = debug)
     # generate_allen_mouse(prefix, out_prefix, random_state = random_state, debug = debug)
-    generate_chimpact(out_prefix, random_state = random_state, debug = debug)
+    # generate_chimpact(out_prefix, random_state = random_state, debug = debug)
+    generate_rat_city(out_prefix, random_state = random_state, debug = debug)
     # generate_rat7m(prefix, out_prefix, random_state = random_state, debug = debug)
     # generate_pairr24m(prefix, out_prefix, random_state = random_state, debug = debug)
     # generate_3dpop(prefix, out_prefix, random_state = random_state, debug = debug)

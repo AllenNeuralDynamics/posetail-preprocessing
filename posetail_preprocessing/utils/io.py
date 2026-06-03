@@ -298,7 +298,8 @@ def save_frames_decord(video_path, frame_indices, outpath,
     return video_info
 
 
-def save_frames_pyav(video_path, start_frame, n_frames, outpath, zfill=6):
+def save_frames_pyav(video_path, start_frame, n_frames, outpath, zfill=6,
+                     progress=False, desc=None):
     """Extract ``n_frames`` consecutive frames starting at ``start_frame`` via PyAV.
 
     decord misbehaves on some mp4s (e.g. the Johnson-lab fly recordings), so this
@@ -309,8 +310,11 @@ def save_frames_pyav(video_path, start_frame, n_frames, outpath, zfill=6):
 
     Writes JPGs named ``000000.jpg`` ... (relative to start_frame) and returns a
     ``video_info`` dict matching ``get_video_info`` plus ``frames_written``.
+
+    Set ``progress=True`` for a per-frame tqdm bar (``desc`` sets its label).
     """
     import av
+    from tqdm import tqdm
 
     os.makedirs(outpath, exist_ok=True)
 
@@ -331,6 +335,8 @@ def save_frames_pyav(video_path, start_frame, n_frames, outpath, zfill=6):
     ts = int(start_frame / fps / time_base)
     container.seek(ts, stream=stream)
 
+    pbar = tqdm(total=n_frames, desc=desc or 'frames', disable=not progress)
+
     written = 0
     for frame in container.decode(video=0):
         frame_idx = round(frame.pts * time_base * fps)
@@ -342,7 +348,9 @@ def save_frames_pyav(video_path, start_frame, n_frames, outpath, zfill=6):
         out_name = str(written).zfill(zfill) + '.jpg'
         cv2.imwrite(os.path.join(outpath, out_name), frame_bgr)
         written += 1
+        pbar.update(1)
 
+    pbar.close()
     container.close()
 
     video_info['frames_written'] = written
