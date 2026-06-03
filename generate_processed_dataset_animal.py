@@ -39,42 +39,33 @@ def update_subsampling(splits, n_vids = 2, n_frames = 16):
     return splits, split_dict, split_frames_dict
 
 
-def generate_3dzef(prefix, out_prefix, dataset_name = '3dzef', 
-                   random_state = 3, debug = False): 
+def generate_3dzef(prefix, out_prefix, dataset_name = '3dzef',
+                   random_state = 3, debug = False):
     '''
-    generates the preprocessed 3dzef dataset
+    generates the preprocessed 3dzef (3DZeF20-pinhole) dataset
 
-    train: 8088 frames (all)
-    val: None 
-    test: 2710 frames (all)
+    Two-view (top + front) zebrafish, head keypoint only. Uses the source
+    `train/` split (the only one with ground truth) and splits by sequence:
+    train: ZebraFish-01/-02/-03 (all frames, 9888 frames/view)
+    val:   ZebraFish-04, first 64 frames
+    test:  ZebraFish-04, remaining 846 frames
     '''
 
     print(f'\ngenerating {dataset_name}...')
-    dataset_path = os.path.join(prefix, dataset_name)
+    dataset_path = os.path.join(prefix, '3dzef', '3DZeF20-pinhole')
     dataset_outpath = os.path.join(out_prefix, dataset_name)
 
     dataset = ZefDataset(
-        dataset_path = dataset_path, 
-        dataset_outpath = dataset_outpath, 
+        dataset_path = dataset_path,
+        dataset_outpath = dataset_outpath,
         dataset_name = dataset_name)
 
     df = dataset.generate_metadata()
 
-    # sample 8k training frames (full train dataset), generate full test 
-    splits = {'train', 'test'}
-    split_dict = {'train': None}
-    split_frames_dict = {'train': None}
+    splits = {'train', 'val', 'test'}
+    df = dataset.select_splits(random_state = random_state)
 
-    if debug: 
-        splits, split_dict, split_frames_dict = update_subsampling(splits)
-
-    df = dataset.select_splits(
-        split_dict = split_dict, 
-        split_frames_dict = split_frames_dict,
-        random_state = random_state)
-
-    # no validation data for this dataset
-    dataset.generate_dataset(splits = splits)
+    dataset.generate_dataset(splits = splits, debug = debug)
 
 
 def generate_acinoset(prefix, out_prefix, kpt_prefix, 
@@ -695,11 +686,11 @@ if __name__ == '__main__':
     # generate_anipose_fly(prefix, out_prefix, dataset_name='tuthill-fly', random_state = random_state, debug = debug)
     # generate_allen_mouse(prefix, out_prefix, random_state = random_state, debug = debug)
     # generate_chimpact(out_prefix, random_state = random_state, debug = debug)
-    generate_rat_city(out_prefix, random_state = random_state, debug = debug)
+    # generate_rat_city(out_prefix, random_state = random_state, debug = debug)
     # generate_rat7m(prefix, out_prefix, random_state = random_state, debug = debug)
     # generate_pairr24m(prefix, out_prefix, random_state = random_state, debug = debug)
     # generate_3dpop(prefix, out_prefix, random_state = random_state, debug = debug)
-    # generate_3dzef(prefix, out_prefix, random_state = random_state, debug = debug)
+    generate_3dzef(prefix, out_prefix, random_state = random_state, debug = debug)
     # generate_cmupanoptic(prefix, out_prefix, kpt_prefix = kpt_prefix, random_state = random_state, debug = debug)
     # generate_johnson_mouse(prefix, out_prefix, random_state = random_state, debug = debug)
     # generate_jarvis_monkey(prefix, out_prefix, random_state = random_state, debug = debug)
