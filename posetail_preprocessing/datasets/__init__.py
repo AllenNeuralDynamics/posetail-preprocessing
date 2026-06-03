@@ -2,6 +2,7 @@ from .base_dataset import BaseDataset
 
 from .acinoset import AcinosetDataset
 from .allen_mouse import AllenMouseDataset
+from .chimpact import ChimpACTDataset
 from .anipose_fly import AniposeFlyDataset
 from .cmupanoptic import CMUPanopticDataset
 from .cmupanoptic_3dgs import CMUPanopticGSDataset

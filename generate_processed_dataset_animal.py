@@ -9,6 +9,7 @@ from posetail_preprocessing.datasets import (
     AcinosetDataset,
     AllenMouseDataset,
     AniposeFlyDataset,
+    ChimpACTDataset,
     CMUPanopticDataset,
     CMUPanopticGSDataset,
     DexYCBDataset,
@@ -599,7 +600,48 @@ def generate_rat7m(prefix, out_prefix, dataset_name = 'rat7m',
 
 
 
-if __name__ == '__main__': 
+def generate_chimpact(out_prefix, dataset_name = 'chimpact',
+                      dataset_path = '/groups/branson/bransonlab/datasets/ChimpACT_release_v1',
+                      random_state = 3, debug = False):
+
+    '''
+    generates the preprocessed ChimpACT dataset (2D-only, single-view, multi-individual)
+
+    Splits follow the official ChimpACT membership; we then sample clips per split:
+    train: all official-train clips (~127), full clips (~100 keyframes each)
+    val:   1 official-val clip, capped to 32 keyframes
+    test:  2 official-test clips, full clips
+
+    output mirrors branson-fly:
+        {out}/{split}/{clip}/ix000000/{pose2d.npz, img/cam0/*.jpg}
+    '''
+
+    print(f'\ngenerating {dataset_name}...')
+    dataset_outpath = os.path.join(out_prefix, dataset_name)
+
+    dataset = ChimpACTDataset(
+        dataset_path = dataset_path,
+        dataset_outpath = dataset_outpath,
+        dataset_name = dataset_name)
+
+    df = dataset.generate_metadata()
+
+    splits = {'train', 'val', 'test'}
+    split_dict = {'train': None, 'val': 1, 'test': 2} # number of clips to sample per split
+    split_frames_dict = {'train': None, 'val': 32}    # keyframe cap per trial
+
+    if debug:
+        splits, split_dict, split_frames_dict = update_subsampling(splits)
+
+    df = dataset.select_splits(
+        split_dict = split_dict,
+        split_frames_dict = split_frames_dict,
+        random_state = random_state)
+
+    dataset.generate_dataset(splits = splits)
+
+
+if __name__ == '__main__':
 
     # raw and processed data locations
     prefix = '/groups/karashchuk/karashchuklab/animal-datasets'
@@ -621,7 +663,8 @@ if __name__ == '__main__':
     # finetuning datasets 
     # generate_acinoset(prefix, oust_prefix, kpt_prefix = kpt_prefix, random_state = random_state, debug = debug)
     # generate_anipose_fly(prefix, out_prefix, dataset_name='tuthill-fly', random_state = random_state, debug = debug)
-    generate_allen_mouse(prefix, out_prefix, random_state = random_state, debug = debug)
+    # generate_allen_mouse(prefix, out_prefix, random_state = random_state, debug = debug)
+    generate_chimpact(out_prefix, random_state = random_state, debug = debug)
     # generate_rat7m(prefix, out_prefix, random_state = random_state, debug = debug)
     # generate_pairr24m(prefix, out_prefix, random_state = random_state, debug = debug)
     # generate_3dpop(prefix, out_prefix, random_state = random_state, debug = debug)

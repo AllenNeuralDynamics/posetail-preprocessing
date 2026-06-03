@@ -1,0 +1,35 @@
+# ChimpACT (https://shirleymaxx.github.io/ChimpACT/) — 16 keypoints, 2D only.
+# Order matches each clip's categories[0]['keypoints'].
+keypoints:
+  - hip
+  - r_knee
+  - r_ankle
+  - l_knee
+  - l_ankle
+  - neck
+  - upper_lip
+  - lower_lip
+  - r_eye
+  - l_eye
+  - r_shoulder
+  - r_elbow
+  - r_wrist
+  - l_shoulder
+  - l_elbow
+  - l_wrist
+# 14 skeleton edges (categories[0]['skeleton'])
+skeleton:
+  - [0, 1]
+  - [1, 2]
+  - [0, 3]
+  - [3, 4]
+  - [0, 5]
+  - [5, 10]
+  - [10, 11]
+  - [11, 12]
+  - [5, 13]
+  - [13, 14]
+  - [14, 15]
+  - [6, 7]
+  - [6, 8]
+  - [6, 9]
