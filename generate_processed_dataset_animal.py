@@ -129,27 +129,41 @@ def generate_anipose_fly(prefix, out_prefix,
     dataset_outpath = os.path.join(out_prefix, dataset_name)
 
     dataset = AniposeFlyDataset(
-        dataset_path = dataset_path, 
-        dataset_outpath = dataset_outpath, 
+        dataset_path = dataset_path,
+        dataset_outpath = dataset_outpath,
         dataset_name = dataset_name,
-        error_thresh = 5)
+        error_thresh = 5,         # drop keypoints with reproj error >= this (px)
+        conf_thresh = 0.7,        # drop keypoints with triangulation score < this
+        min_ncams = 2,            # drop keypoints triangulated from < this many cams
+        mad_k = 6.0,              # drop temporal MAD-outlier keypoints (robust stds)
+        min_valid_frac = 0.60,    # gate: min fraction of keypoints surviving cleaning
+                                  # (recalibrated for the cleaned pose; good subjects
+                                  # sit ~0.63-0.74, noisy ones ~0.40-0.46)
+        max_reproj_error = None,  # optional reprojection-error gate (px)
+        # held-out subjects chosen from per-subject quality + visual review
+        # (both clean-tracking, held out from the sarah-dominated train set)
+        val_subjects = ['grant/11.29.22/Fly 4_0'],
+        test_subjects = ['grant/11.29.22/Fly 1_0'])
 
     df = dataset.generate_metadata()
 
-    # sample 60k training frames, full training dataset
+    # high-movement, quality-filtered bouts per trial (best window per trial,
+    # survivors ranked by movement); bouts applied to test too
     splits = {'train', 'val', 'test'}
-    # split_dict = {'train': 3, 'val': 2} # number of videos to sample from the dataset
-    # split_frames_dict = {'train': 16, 'val': 16} # number of consecutive frames per video to sample 
+    # None = keep ALL quality-gated bouts (do NOT set a train budget above the
+    # number that pass the gate, or floor-protection relaxes the gate and pulls
+    # in un-reviewed sub-threshold bouts). train = all 887 gate-passing/reviewed
+    # bouts; val = top-2 by movement of the held-out fly; test = all of its bouts.
+    split_dict = {'train': None, 'val': 2, 'test': None}        # bouts per split (None = all)
+    split_frames_dict = {'train': 60, 'val': 16, 'test': 16}    # frames per bout
 
-    split_dict = {'train': 1000, 'val': 2} # number of videos to sample from the dataset
-    split_frames_dict = {'train': 60, 'val': 16} # number of consecutive frames per video to sample
-
-    if debug: 
-        splits, split_dict, split_frames_dict = update_subsampling(splits)
+    if debug:
+        split_dict = {'train': 2, 'val': 1, 'test': 1}
+        split_frames_dict = {'train': 16, 'val': 8, 'test': 16}
 
     df = dataset.select_splits(
-        split_dict = split_dict, 
-        split_frames_dict = split_frames_dict, 
+        split_dict = split_dict,
+        split_frames_dict = split_frames_dict,
         random_state = random_state)
 
     dataset.generate_dataset(splits = splits)
@@ -213,7 +227,8 @@ def generate_allen_mouse(prefix, out_prefix,
         dataset_outpath = dataset_outpath,
         dataset_name    = dataset_name,
         error_thresh    = 5,
-        conf_thresh     = 0.7)
+        conf_thresh     = 0.7,
+        quality_thresh  = 0.4)
 
     # n_bouts per split
     split_dict        = {'train': 120, 'val': 1, 'test': 1}
@@ -606,7 +621,7 @@ if __name__ == '__main__':
     # finetuning datasets 
     # generate_acinoset(prefix, oust_prefix, kpt_prefix = kpt_prefix, random_state = random_state, debug = debug)
     # generate_anipose_fly(prefix, out_prefix, dataset_name='tuthill-fly', random_state = random_state, debug = debug)
-    # generate_allen_mouse(prefix, out_prefix, random_state = random_state, debug = debug)
+    generate_allen_mouse(prefix, out_prefix, random_state = random_state, debug = debug)
     # generate_rat7m(prefix, out_prefix, random_state = random_state, debug = debug)
     # generate_pairr24m(prefix, out_prefix, random_state = random_state, debug = debug)
     # generate_3dpop(prefix, out_prefix, random_state = random_state, debug = debug)
@@ -615,7 +630,7 @@ if __name__ == '__main__':
     # generate_johnson_mouse(prefix, out_prefix, random_state = random_state, debug = debug)
     # generate_jarvis_monkey(prefix, out_prefix, random_state = random_state, debug = debug)
     # generate_johnson_fly(out_prefix, random_state = random_state, debug = debug)
-    generate_allen_mouse(prefix, out_prefix, random_state = random_state, debug = debug)
+    # generate_allen_mouse(prefix, out_prefix, random_state = random_state, debug = debug)
     # generate_voigts_mouse(prefix, out_prefix, random_state = random_state, debug = debug)
     # generate_sober_bird(prefix, out_prefix, random_state = random_state, debug = debug)
     

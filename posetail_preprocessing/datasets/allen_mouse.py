@@ -7,12 +7,37 @@ import numpy as np
 import pandas as pd
 
 from einops import rearrange
+from scipy.signal import medfilt as scipy_medfilt
 from tqdm import tqdm
 
 from posetail_preprocessing.datasets import BaseDataset
-from posetail_preprocessing.utils import io, assemble_extrinsics, top_movement_windows
+from posetail_preprocessing.utils import io, assemble_extrinsics, top_movement_windows, top_windows_across_segments
 
 import re
+
+
+def detect_quality_segments(vis, pose, frame_start=0, frame_end=None,
+                             threshold=0.4, min_frames=200, medfilt_kernel=51):
+    """Return (start, end) tuples of contiguous high-quality frames within [frame_start, frame_end).
+
+    Quality = (mean 2D visibility over K×V) × (fraction non-NaN 3D keypoints), smoothed.
+    vis:  (1, T, K, V) bool
+    pose: (1, T, K, 3) float, NaN where error-filtered
+    """
+    if frame_end is None:
+        frame_end = vis.shape[1]
+    vis_q  = vis[0, frame_start:frame_end].mean(axis=(1, 2))
+    pose_q = (~np.isnan(pose[0, frame_start:frame_end]).any(axis=-1)).mean(axis=1)
+    quality = vis_q * pose_q
+    quality_smooth = scipy_medfilt(quality.astype(float), kernel_size=medfilt_kernel)
+    above  = quality_smooth >= threshold
+    padded = np.concatenate([[False], above, [False]])
+    diff   = np.diff(padded.astype(np.int8))
+    return [
+        (frame_start + int(s), frame_start + int(e))
+        for s, e in zip(np.where(diff == 1)[0], np.where(diff == -1)[0])
+        if e - s >= min_frames
+    ]
 
 
 def true_basename(fname):
@@ -36,11 +61,12 @@ class AllenMouseDataset(BaseDataset):
     TRIAL   = '2024-12-03T10_47_14'
 
     def __init__(self, dataset_path, dataset_outpath,
-                 dataset_name='allen-mouse', error_thresh=None, conf_thresh=0.7):
+                 dataset_name='allen-mouse', error_thresh=None, conf_thresh=0.7, quality_thresh=0.4):
         super().__init__(dataset_path, dataset_outpath)
-        self.dataset_name = dataset_name
-        self.error_thresh = error_thresh
-        self.conf_thresh  = conf_thresh
+        self.dataset_name  = dataset_name
+        self.error_thresh  = error_thresh
+        self.conf_thresh   = conf_thresh
+        self.quality_thresh = quality_thresh
 
     # ------------------------------------------------------------------
     # calibration
@@ -183,6 +209,10 @@ class AllenMouseDataset(BaseDataset):
         # --- 2D visibility ---
         pose_dict['vis'] = self.load_vis2d(subject_path, trial, keypoints, cam_order)
 
+        # NaN out 3D keypoints where no camera reaches conf_thresh
+        any_visible = pose_dict['vis'][0].any(axis=-1)       # (T, K)
+        pose_dict['pose'][0][~any_visible] = np.nan
+
         # --- videos ---
         video_dir   = os.path.join(self.dataset_path, subject, 'behavior-videos', 'behavior-videos')
         video_paths = sorted(glob.glob(os.path.join(video_dir, f'*{trial}*.mp4')))
@@ -228,9 +258,22 @@ class AllenMouseDataset(BaseDataset):
 
             r_start, r_end = region[split]
 
-            bout_starts = top_movement_windows(
-                pose_dict['pose'], bout, n_bouts,
-                frame_start=r_start, frame_end=r_end)
+            quality_segs = detect_quality_segments(
+                pose_dict['vis'], pose_dict['pose'],
+                frame_start=r_start, frame_end=r_end,
+                threshold=self.quality_thresh,
+                min_frames=bout,
+                medfilt_kernel=51)
+            print(f'  {split}: {len(quality_segs)} quality segments in [{r_start}, {r_end})')
+
+            if quality_segs:
+                bout_starts = top_windows_across_segments(
+                    pose_dict['pose'], bout, n_bouts, quality_segs)
+            else:
+                print(f'  WARNING: no quality segments for {split}; falling back to movement-only')
+                bout_starts = top_movement_windows(
+                    pose_dict['pose'], bout, n_bouts,
+                    frame_start=r_start, frame_end=r_end)
 
             for start in tqdm(bout_starts, desc=f'{split}'):
                 subset = self._subset_pose_dict(dict(pose_dict), start_frame=start, n_frames=bout)
