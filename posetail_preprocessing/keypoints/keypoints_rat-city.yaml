@@ -1,0 +1,13 @@
+# Rat City (Branson lab) — 4 keypoints, 2D only.
+# Order matches solution_keypoints.csv kp0..kp3.
+keypoints:
+  - nose
+  - left_ear
+  - right_ear
+  - tail_base
+# skeleton edges
+skeleton:
+  - [0, 1]   # nose - left_ear
+  - [0, 2]   # nose - right_ear
+  - [1, 2]   # left_ear - right_ear
+  - [0, 3]   # nose - tail_base
