@@ -133,26 +133,27 @@ def generate_anipose_fly(prefix, out_prefix,
                                   # (recalibrated for the cleaned pose; good subjects
                                   # sit ~0.63-0.74, noisy ones ~0.40-0.46)
         max_reproj_error = None,  # optional reprojection-error gate (px)
-        # held-out subjects chosen from per-subject quality + visual review
-        # (both clean-tracking, held out from the sarah-dominated train set)
-        val_subjects = ['grant/11.29.22/Fly 4_0'],
-        test_subjects = ['grant/11.29.22/Fly 1_0'])
+        # restrict to the single sarah/8.25.22 session (5 clean-tracking flies)
+        subject_glob = 'sarah/8.25.22/Fly *',
+        # hold out one fly; its bouts are split (trial-level) into val + test,
+        # train = the other 4 flies
+        holdout_subject = 'sarah/8.25.22/Fly 5_0')
 
     df = dataset.generate_metadata()
 
     # high-movement, quality-filtered bouts per trial (best window per trial,
     # survivors ranked by movement); bouts applied to test too
     splits = {'train', 'val', 'test'}
-    # None = keep ALL quality-gated bouts (do NOT set a train budget above the
-    # number that pass the gate, or floor-protection relaxes the gate and pulls
-    # in un-reviewed sub-threshold bouts). train = all 887 gate-passing/reviewed
-    # bouts; val = top-2 by movement of the held-out fly; test = all of its bouts.
-    split_dict = {'train': None, 'val': 2, 'test': None}        # bouts per split (None = all)
+    # train (Fly 1-4): None = keep ALL quality-gated bouts (do NOT set a train
+    # budget above the number that pass the gate, or floor-protection relaxes the
+    # gate). Held-out Fly 5_0 is split by movement: top-2 -> val (~32 frames),
+    # next 16 -> test (~256 frames). val/test frame windows MUST be equal.
+    split_dict = {'train': None, 'val': 2, 'test': 16}          # bouts per split (None = all)
     split_frames_dict = {'train': 60, 'val': 16, 'test': 16}    # frames per bout
 
     if debug:
-        split_dict = {'train': 2, 'val': 1, 'test': 1}
-        split_frames_dict = {'train': 16, 'val': 8, 'test': 16}
+        split_dict = {'train': 2, 'val': 1, 'test': 2}
+        split_frames_dict = {'train': 16, 'val': 8, 'test': 8}
 
     df = dataset.select_splits(
         split_dict = split_dict,
@@ -683,14 +684,14 @@ if __name__ == '__main__':
 
     # finetuning datasets 
     # generate_acinoset(prefix, oust_prefix, kpt_prefix = kpt_prefix, random_state = random_state, debug = debug)
-    # generate_anipose_fly(prefix, out_prefix, dataset_name='tuthill-fly', random_state = random_state, debug = debug)
+    generate_anipose_fly(prefix, out_prefix, dataset_name='tuthill-fly', random_state = random_state, debug = debug)
     # generate_allen_mouse(prefix, out_prefix, random_state = random_state, debug = debug)
     # generate_chimpact(out_prefix, random_state = random_state, debug = debug)
     # generate_rat_city(out_prefix, random_state = random_state, debug = debug)
     # generate_rat7m(prefix, out_prefix, random_state = random_state, debug = debug)
     # generate_pairr24m(prefix, out_prefix, random_state = random_state, debug = debug)
     # generate_3dpop(prefix, out_prefix, random_state = random_state, debug = debug)
-    generate_3dzef(prefix, out_prefix, random_state = random_state, debug = debug)
+    #generate_3dzef(prefix, out_prefix, random_state = random_state, debug = debug)
     # generate_cmupanoptic(prefix, out_prefix, kpt_prefix = kpt_prefix, random_state = random_state, debug = debug)
     # generate_johnson_mouse(prefix, out_prefix, random_state = random_state, debug = debug)
     # generate_jarvis_monkey(prefix, out_prefix, random_state = random_state, debug = debug)

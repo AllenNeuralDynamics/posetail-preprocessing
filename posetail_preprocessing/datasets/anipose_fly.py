@@ -22,10 +22,20 @@ class AniposeFlyDataset(BaseDataset):
                  dataset_name = 'anipose_fly', error_thresh = None,
                  conf_thresh = 0.7, min_valid_frac = 0.75,
                  max_reproj_error = None, min_ncams = 2, mad_k = 6.0,
-                 val_subjects = None, test_subjects = None):
+                 val_subjects = None, test_subjects = None,
+                 subject_glob = '*/*/Fly *', holdout_subject = None):
         super().__init__(dataset_path, dataset_outpath)
 
         self.dataset_name = dataset_name
+        # glob (relative to dataset_path) selecting which subjects to include;
+        # narrow this to restrict the dataset to a subset (e.g. a single session
+        # 'sarah/8.25.22/Fly *'). subjects stay 2 levels deep so calibration and
+        # output naming are unaffected.
+        self.subject_glob = subject_glob
+        # when set, a SINGLE subject is held out and its bouts are partitioned at
+        # the trial level into val (top val_n by movement) + test (next test_n),
+        # rather than holding out whole subjects via val_subjects/test_subjects.
+        self.holdout_subject = holdout_subject
         # per-keypoint NaN-masking applied in load_pose3d (so the saved 3D pose
         # and the review renders share the exact same surviving points): a point
         # is dropped to NaN when its anipose reprojection error >= error_thresh,
@@ -212,7 +222,7 @@ class AniposeFlyDataset(BaseDataset):
         
         # subjects = io.get_dirs(self.dataset_path)
         os.chdir(self.dataset_path)
-        subjects = glob.glob('*/*/Fly *')
+        subjects = glob.glob(self.subject_glob)
         rows = []
 
         for subject in subjects: 
@@ -340,8 +350,16 @@ class AniposeFlyDataset(BaseDataset):
 
         # everything starts as train; held-out subjects become val/test
         self.metadata['split'] = 'train'
-        self.metadata.loc[self.metadata['subject'].isin(self.val_subjects), 'split'] = 'val'
-        self.metadata.loc[self.metadata['subject'].isin(self.test_subjects), 'split'] = 'test'
+
+        if self.holdout_subject is not None:
+            # single-subject holdout: tag the WHOLE held-out fly 'val' for now so
+            # all its bouts are scored under one window; it is partitioned into
+            # disjoint val/test below.
+            self.metadata.loc[self.metadata['subject'] == self.holdout_subject,
+                              'split'] = 'val'
+        else:
+            self.metadata.loc[self.metadata['subject'].isin(self.val_subjects), 'split'] = 'val'
+            self.metadata.loc[self.metadata['subject'].isin(self.test_subjects), 'split'] = 'test'
 
         # score movement + quality for every split we have a frame budget for,
         # then auto-filter on quality and rank survivors by movement
@@ -351,7 +369,9 @@ class AniposeFlyDataset(BaseDataset):
             self._score_bouts(score_splits, split_frames_dict)
             self._apply_quality_filter(score_splits, split_dict = split_dict)
 
-        if split_dict:
+        if self.holdout_subject is not None:
+            self._partition_holdout(split_dict, split_frames_dict, scored)
+        elif split_dict:
             for split, n in split_dict.items():
                 if scored and 'movement_score' in self.metadata.columns:
                     self._select_top_movement_among_included(split = split, n = n)
@@ -360,6 +380,50 @@ class AniposeFlyDataset(BaseDataset):
                                                   random_state = random_state)
 
         return self.metadata
+
+    def _partition_holdout(self, split_dict, split_frames_dict, scored):
+        """Split the held-out fly's gate-passing bouts into disjoint val/test.
+
+        The held-out fly is tagged entirely 'val' before scoring (so every bout
+        is scored under one window). Here we rank its quality-passing bouts by
+        movement and take the top ``split_dict['val']`` as val, the next
+        ``split_dict['test']`` as test, dropping the remainder. Train (the other
+        flies) gets its usual budget applied (None = keep all gate-passers).
+
+        val and test MUST share a frame window: scoring runs once under the val
+        window, so re-labelling bouts to test only stays consistent (same
+        movement_start_frame) when the windows are equal.
+        """
+        split_dict = split_dict or {}
+        if split_frames_dict:
+            assert split_frames_dict.get('val') == split_frames_dict.get('test'), (
+                'holdout partition requires equal val/test frame windows '
+                f"(got val={split_frames_dict.get('val')}, "
+                f"test={split_frames_dict.get('test')})")
+
+        val_n = split_dict.get('val') or 0
+        test_n = split_dict.get('test') or 0
+
+        included = ((self.metadata['subject'] == self.holdout_subject)
+                    & self.metadata['include'])
+        ranked = self.metadata.loc[included].sort_values('movement_score',
+                                                         ascending = False).index
+
+        val_ix = ranked[:val_n]
+        test_ix = ranked[val_n:val_n + test_n]
+        drop_ix = ranked[val_n + test_n:]
+
+        # val rows are already split=='val'; re-label test, drop the remainder
+        self.metadata.loc[test_ix, 'split'] = 'test'
+        self.metadata.loc[drop_ix, 'include'] = False
+
+        print(f'[anipose_fly] holdout {self.holdout_subject}: '
+              f'{len(val_ix)} val + {len(test_ix)} test bouts '
+              f'({len(ranked)} gate-passing, {len(drop_ix)} dropped)')
+
+        # apply the train budget on the remaining flies (None = keep all)
+        if scored and 'train' in split_dict:
+            self._select_top_movement_among_included('train', split_dict['train'])
 
     def generate_dataset(self, splits = None): 
 
@@ -373,7 +437,7 @@ class AniposeFlyDataset(BaseDataset):
             splits = valid_splits
 
         os.chdir(self.dataset_path)
-        subjects = glob.glob('*/*/Fly *')            
+        subjects = glob.glob(self.subject_glob)
         # generate the dataset for each split
         for split in splits: 
             for subject in tqdm(subjects, desc = split): 
