@@ -21,6 +21,7 @@ from posetail_preprocessing.datasets import (
     POPDataset,
     Rat7MDataset,
     RatCityDataset,
+    RavanFishDataset,
     SoberBirdDataset,
     VoigtsMouseDataset
 )
@@ -663,6 +664,36 @@ def generate_rat_city(out_prefix, dataset_name='rat-city',
     dataset.generate_dataset(splits={'train', 'val', 'test'}, debug=debug)
 
 
+def generate_ravan_fish(out_prefix, dataset_name='ravan-fish-sim',
+                        dataset_path='/misc/public/forLili_fromAniket/dataset_for_Lili_20260511/test_Lili_dense_fish_max_20',
+                        random_state=3, debug=False):
+
+    '''
+    generates the preprocessed Ravan fish (simulated dense zebrafish) dataset
+    (2D-only, single-view, multi-individual)
+
+    10 clips of crowded fish (up to 20), 12 keypoints. Splits by video (zef3d-style):
+    train: zebrafish_000000.._000008, all 299 frames each
+    val:   zebrafish_000009, frames [0, 32)
+    test:  zebrafish_000009, frames [32, end)
+
+    output mirrors chimpact / rat-city:
+        {out}/{split}/{video}/ix{start}/{pose2d.npz, img/cam0/*.jpg}
+    '''
+
+    print(f'\ngenerating {dataset_name}...')
+    dataset_outpath = os.path.join(out_prefix, dataset_name)
+
+    dataset = RavanFishDataset(
+        dataset_path=dataset_path,
+        dataset_outpath=dataset_outpath,
+        dataset_name=dataset_name)
+
+    dataset.generate_metadata()
+    dataset.select_splits()
+    dataset.generate_dataset(splits={'train', 'val', 'test'}, debug=debug)
+
+
 if __name__ == '__main__':
 
     # raw and processed data locations
@@ -684,10 +715,11 @@ if __name__ == '__main__':
 
     # finetuning datasets 
     # generate_acinoset(prefix, oust_prefix, kpt_prefix = kpt_prefix, random_state = random_state, debug = debug)
-    generate_anipose_fly(prefix, out_prefix, dataset_name='tuthill-fly', random_state = random_state, debug = debug)
+    # generate_anipose_fly(prefix, out_prefix, dataset_name='tuthill-fly', random_state = random_state, debug = debug)
     # generate_allen_mouse(prefix, out_prefix, random_state = random_state, debug = debug)
     # generate_chimpact(out_prefix, random_state = random_state, debug = debug)
     # generate_rat_city(out_prefix, random_state = random_state, debug = debug)
+    generate_ravan_fish(out_prefix, random_state = random_state, debug = debug)
     # generate_rat7m(prefix, out_prefix, random_state = random_state, debug = debug)
     # generate_pairr24m(prefix, out_prefix, random_state = random_state, debug = debug)
     # generate_3dpop(prefix, out_prefix, random_state = random_state, debug = debug)

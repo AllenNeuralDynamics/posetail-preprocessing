@@ -18,5 +18,6 @@ from .point_odyssey_multiview import PointOdysseyMultiviewDataset
 from .pop3d import POPDataset
 from .rat7m import Rat7MDataset
 from .rat_city import RatCityDataset
+from .ravan_fish import RavanFishDataset
 from .sober_bird import SoberBirdDataset
 from .zef3d import ZefDataset
