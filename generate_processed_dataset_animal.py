@@ -636,7 +636,7 @@ def generate_chimpact(out_prefix, dataset_name = 'chimpact',
 
 
 def generate_rat_city(out_prefix, dataset_name='rat-city',
-                      dataset_path='/groups/branson/bransonlab/manan/cohort7_20251209_1659',
+                      dataset_path='/groups/karashchuk/karashchuklab/animal-datasets/janelia-shared/rat-city/cohort7_20251209_1659',
                       random_state=3, debug=False):
 
     '''
@@ -718,8 +718,8 @@ if __name__ == '__main__':
     # generate_anipose_fly(prefix, out_prefix, dataset_name='tuthill-fly', random_state = random_state, debug = debug)
     # generate_allen_mouse(prefix, out_prefix, random_state = random_state, debug = debug)
     # generate_chimpact(out_prefix, random_state = random_state, debug = debug)
-    # generate_rat_city(out_prefix, random_state = random_state, debug = debug)
-    generate_ravan_fish(out_prefix, random_state = random_state, debug = debug)
+    generate_rat_city(out_prefix, random_state = random_state, debug = debug)
+    # generate_ravan_fish(out_prefix, random_state = random_state, debug = debug)
     # generate_rat7m(prefix, out_prefix, random_state = random_state, debug = debug)
     # generate_pairr24m(prefix, out_prefix, random_state = random_state, debug = debug)
     # generate_3dpop(prefix, out_prefix, random_state = random_state, debug = debug)

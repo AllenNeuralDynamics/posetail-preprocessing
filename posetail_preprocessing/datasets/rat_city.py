@@ -28,7 +28,7 @@ import numpy as np
 import pandas as pd
 
 from posetail_preprocessing.datasets import BaseDataset
-from posetail_preprocessing.utils import io
+from posetail_preprocessing.utils import io, despike_pose
 
 
 # 4 keypoints, in the order stored as kp0..kp3 in solution_keypoints.csv.
@@ -43,7 +43,9 @@ class RatCityDataset(BaseDataset):
     def __init__(self, dataset_path, dataset_outpath, dataset_name='rat-city'):
         super().__init__(dataset_path, dataset_outpath)
         self.dataset_name = dataset_name
-        self.csv_path = os.path.join(dataset_path, 'solution_keypoints.csv')
+        # source layout (consolidated backup): keypoints CSV lives under solution/,
+        # movie co-located at the top level (see generate_rat_city in the runner).
+        self.csv_path = os.path.join(dataset_path, 'solution', 'solution_keypoints.csv')
         self.video_path = os.path.join(dataset_path, 'movie.avi')
 
     # ------------------------------------------------------------------
@@ -105,6 +107,17 @@ class RatCityDataset(BaseDataset):
         pose_dict = self.load_pose2d()
 
         info = io.get_video_info(self.video_path)
+
+        # clean implausible label jumps (out-and-back "teleport" spikes) before
+        # any split subsetting so train/val/test all get cleaned. Thresholds are
+        # per-track adaptive; image_size only sets a ceiling.
+        image_size = max(int(info['camera_widths']), int(info['camera_heights']))
+        n_before = int(np.isfinite(pose_dict['pose']).all(axis=-1).sum())
+        pose_dict['pose'] = despike_pose(pose_dict['pose'], image_size=image_size)
+        n_after = int(np.isfinite(pose_dict['pose']).all(axis=-1).sum())
+        print(f'  despike: removed {n_before - n_after} / {n_before} points '
+              f'({100.0 * (n_before - n_after) / max(n_before, 1):.2f}%)')
+
         nframes = min(int(info['num_frames']), pose_dict['pose'].shape[1])
 
         train_end = int(0.8 * nframes)
