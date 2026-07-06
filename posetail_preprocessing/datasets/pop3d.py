@@ -10,7 +10,7 @@ import pandas as pd
 from tqdm import tqdm
 
 from posetail_preprocessing.datasets import BaseDataset
-from posetail_preprocessing.utils import io, assemble_extrinsics, best_movement_window
+from posetail_preprocessing.utils import io, assemble_extrinsics, best_movement_window, despike_pose_3d
 
 
 class POPDataset(BaseDataset): 
@@ -80,6 +80,17 @@ class POPDataset(BaseDataset):
             subject_coords.append(pose3d)
 
         subject_coords = np.stack(subject_coords)
+
+        # The raw 3DPOP 3D annotations contain single-frame identity/triangulation
+        # errors that teleport a keypoint hundreds of units across the scene. NaN
+        # those out before they (a) inflate best_movement_window's displacement and
+        # pull the selected window onto corrupt frames, and (b) get scored as GT.
+        n_before = int(np.isfinite(subject_coords).all(axis = -1).sum())
+        subject_coords = despike_pose_3d(subject_coords)
+        n_after = int(np.isfinite(subject_coords).all(axis = -1).sum())
+        print(f'  despike 3dpop: removed {n_before - n_after} / {n_before} points '
+              f'({100.0 * (n_before - n_after) / max(n_before, 1):.2f}%)')
+
         pose3d_dict = {'pose': subject_coords, 'keypoints': unique_kpts, 'ids': ids}
 
         return pose3d_dict

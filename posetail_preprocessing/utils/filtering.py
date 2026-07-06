@@ -111,6 +111,60 @@ def _prev_next_finite(fin):
     return prev, nxt
 
 
+def _despike_track(xy, spike_thr, cap_thr, win):
+    '''Clean one (T, D) trajectory in place with the 3-pass nan-aware teleport
+    detector and return it. ``D`` may be 2 (pixels) or 3 (world units); all the
+    geometry is euclidean (``np.linalg.norm(..., axis=-1)``), so the passes are
+    dimension-agnostic. ``spike_thr`` / ``cap_thr`` are the already-resolved
+    per-track thresholds in the trajectory's own units.
+    '''
+    T = xy.shape[0]
+    ar = np.arange(T)
+
+    # pass 1: median-filter despike
+    med = _nan_running_median(xy, win)
+    dist = np.linalg.norm(xy - med, axis = -1)
+    xy[np.isfinite(dist) & (dist > spike_thr)] = np.nan
+
+    # passes 2 & 3 operate on the post-pass-1 finite set
+    fin = np.isfinite(xy[:, 0])
+    if fin.sum() < 3:
+        return xy
+    prev, nxt = _prev_next_finite(fin)
+    hp = prev >= 0
+    hn = nxt >= 0
+
+    out_leg = np.full(T, np.nan)               # |p[t] - p[prev]|
+    out_leg[hp] = np.linalg.norm(xy[ar[hp]] - xy[prev[hp]], axis = -1)
+    in_leg = np.full(T, np.nan)                # |p[nxt] - p[t]|
+    in_leg[hn] = np.linalg.norm(xy[nxt[hn]] - xy[ar[hn]], axis = -1)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore', RuntimeWarning)
+        # pass 2: immediate-neighbour out-and-back spike
+        immediate = fin & (prev == ar - 1) & (nxt == ar + 1)
+        skip = np.full(T, np.inf)
+        skip[immediate] = np.linalg.norm(
+            xy[nxt[immediate]] - xy[prev[immediate]], axis = -1)
+        spike = (immediate & (out_leg > spike_thr) & (in_leg > spike_thr)
+                 & (skip < 0.5 * np.maximum(out_leg, in_leg)))
+        # pass 3: velocity cap (both finite neighbours far)
+        cap = fin & hp & hn & (out_leg > cap_thr) & (in_leg > cap_thr)
+
+    xy[spike | cap] = np.nan
+    return xy
+
+
+def _track_motion_scale(xy):
+    '''Median frame-to-frame step ``ms`` of a (T, D) trajectory (nan-aware),
+    used to scale the adaptive thresholds. Returns 0.0 when undefined.'''
+    step = np.linalg.norm(np.diff(xy, axis = 0), axis = -1)
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore', RuntimeWarning)
+        ms = np.nanmedian(step)
+    return float(ms) if np.isfinite(ms) else 0.0
+
+
 def despike_pose(pose, image_size, win = 5,
                  n_med = 4.0, floor_px = 6.0,
                  cap_n_med = 8.0, cap_floor_px = 20.0, max_frac = 0.06):
@@ -150,56 +204,89 @@ def despike_pose(pose, image_size, win = 5,
     Returns a cleaned copy of ``pose``.
     '''
     out = pose.copy()
-    S, T, K, _ = pose.shape
+    S, _, K, _ = pose.shape
     ceiling = float(max_frac * np.sqrt(2.0) * image_size)
-    ar = np.arange(T)
 
     for s in range(S):
         for k in range(K):
             xy = out[s, :, k, :]                       # (T, 2) view -- mutate via out
 
             # per-track motion scale -> adaptive thresholds
-            step = np.linalg.norm(np.diff(xy, axis = 0), axis = -1)
-            with warnings.catch_warnings():
-                warnings.simplefilter('ignore', RuntimeWarning)
-                ms = np.nanmedian(step)
-            if not np.isfinite(ms):
-                ms = 0.0
+            ms = _track_motion_scale(xy)
             spike_thr = min(max(floor_px, n_med * ms), ceiling)
             cap_thr = min(max(cap_floor_px, cap_n_med * ms), ceiling)
 
-            # pass 1: median-filter despike
-            med = _nan_running_median(xy, win)
-            dist = np.linalg.norm(xy - med, axis = -1)
-            xy[np.isfinite(dist) & (dist > spike_thr)] = np.nan
+            out[s, :, k, :] = _despike_track(xy, spike_thr, cap_thr, win)
 
-            # passes 2 & 3 operate on the post-pass-1 finite set
-            fin = np.isfinite(xy[:, 0])
-            if fin.sum() < 3:
-                continue
-            prev, nxt = _prev_next_finite(fin)
-            hp = prev >= 0
-            hn = nxt >= 0
+    # any nan coordinate nans the whole point
+    mask = np.isnan(out).any(axis = -1)
+    out[mask] = np.nan
 
-            out_leg = np.full(T, np.nan)               # |p[t] - p[prev]|
-            out_leg[hp] = np.linalg.norm(xy[ar[hp]] - xy[prev[hp]], axis = -1)
-            in_leg = np.full(T, np.nan)                # |p[nxt] - p[t]|
-            in_leg[hn] = np.linalg.norm(xy[nxt[hn]] - xy[ar[hn]], axis = -1)
+    return out
 
-            with warnings.catch_warnings():
-                warnings.simplefilter('ignore', RuntimeWarning)
-                # pass 2: immediate-neighbour out-and-back spike
-                immediate = fin & (prev == ar - 1) & (nxt == ar + 1)
-                skip = np.full(T, np.inf)
-                skip[immediate] = np.linalg.norm(
-                    xy[nxt[immediate]] - xy[prev[immediate]], axis = -1)
-                spike = (immediate & (out_leg > spike_thr) & (in_leg > spike_thr)
-                         & (skip < 0.5 * np.maximum(out_leg, in_leg)))
-                # pass 3: velocity cap (both finite neighbours far)
-                cap = fin & hp & hn & (out_leg > cap_thr) & (in_leg > cap_thr)
 
-            xy[spike | cap] = np.nan
-            out[s, :, k, :] = xy
+def despike_pose_3d(pose, scale = None, win = 5,
+                    n_med = 4.0, floor = None,
+                    cap_n_med = 8.0, cap_floor = None,
+                    max_frac = 0.06):
+    '''
+    3D analogue of ``despike_pose`` for world-unit pose arrays whose raw labels
+    have "teleport" spikes (e.g. 3dpop's source 3D annotations contain
+    single-frame identity/triangulation errors that jump a keypoint hundreds of
+    units across the scene). NaNs the offending points so downstream training /
+    eval (which already masks NaNs) is not scored against wrong labels.
+
+    pose: (S, T, K, 3) float, world units, nan = missing.
+
+    Identical 3-pass per-track logic to ``despike_pose``; the only difference is
+    that thresholds live in world units instead of pixels. The adaptive part
+    ``n_med * ms`` (``ms`` = per-track median frame-to-frame step) is unit-free
+    and does the real work. ``scale`` is the world-unit analogue of the 2D
+    ``image_size`` (the full *scene* extent, not the animal's size), used only to
+    set the absolute floors / ceiling so the cleaner is dataset/unit agnostic.
+    The fractions mirror the 2D defaults relative to a ~1024 px frame
+    (floor 6/1024 ≈ 0.006, cap 20/1024 ≈ 0.02, ceiling 0.085):
+
+      scale     -- if None, the robust scene extent = diagonal of the
+                   2nd-98th-percentile axis-aligned box over all finite points
+                   (percentiles, not min/max, so the teleport spikes being
+                   removed don't inflate it).
+      floor     -- spike-threshold floor; if None, ``0.006 * scale``.
+      cap_floor -- velocity-cap floor; if None, ``0.02 * scale``.
+      ceiling   -- ``max_frac * sqrt(2) * scale`` caps a degenerate (huge-ms)
+                   track from disabling cleaning.
+
+    Returns a cleaned copy of ``pose``.
+    '''
+    out = pose.copy()
+    S, T, K, D = pose.shape
+    assert D == 3, f'despike_pose_3d expects (S, T, K, 3), got last dim {D}'
+
+    if scale is None:
+        # robust scene extent: diagonal of the 2nd-98th pct box over all finite
+        # points (resists the outlier teleports we are about to remove)
+        pts = out.reshape(-1, 3)
+        pts = pts[np.isfinite(pts).all(axis = -1)]
+        if len(pts) >= 2:
+            lo = np.percentile(pts, 2, axis = 0)
+            hi = np.percentile(pts, 98, axis = 0)
+            scale = float(np.linalg.norm(hi - lo))
+        else:
+            scale = 1.0
+        if not np.isfinite(scale) or scale <= 0:
+            scale = 1.0
+
+    floor = 0.006 * scale if floor is None else floor
+    cap_floor = 0.02 * scale if cap_floor is None else cap_floor
+    ceiling = float(max_frac * np.sqrt(2.0) * scale)
+
+    for s in range(S):
+        for k in range(K):
+            xyz = out[s, :, k, :]                      # (T, 3) view
+            ms = _track_motion_scale(xyz)
+            spike_thr = min(max(floor, n_med * ms), ceiling)
+            cap_thr = min(max(cap_floor, cap_n_med * ms), ceiling)
+            out[s, :, k, :] = _despike_track(xyz, spike_thr, cap_thr, win)
 
     # any nan coordinate nans the whole point
     mask = np.isnan(out).any(axis = -1)
