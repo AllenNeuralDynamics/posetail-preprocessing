@@ -65,8 +65,9 @@ class PairR24MDataset(BaseDataset):
         columns = list(df.columns)
 
         keypoints = self._get_keypoints(columns, fmt = fmt)
-        subjects = ['_an1_', '_an2_']
+        subjects = ['an1', 'an2']
         subject_pose = []
+        ids = []
 
         for i, subject in enumerate(subjects): 
 
@@ -74,15 +75,21 @@ class PairR24MDataset(BaseDataset):
             if skip_id and i == skip_id:
                 continue  
 
-            pose3d = self._get_subject_pose(df, keypoints, subject = subject)
+            pose3d = self._get_subject_pose(df, keypoints, subject = f'_{subject}_')
             subject_pose.append(pose3d)
+            ids.append(subject)
 
         keypoints = [kpt.replace(fmt + subjects[0], '') for kpt in keypoints]
         keypoints = [kpt.replace(fmt + subjects[1], '') for kpt in keypoints]
         keypoints = pd.unique(np.array([kpt.rstrip('_xyz') for kpt in keypoints]))
 
         pose3d = np.stack(subject_pose, axis = 0) # (2, frame, kpts, 3)
-        pose3d_dict = {'pose': pose3d, 'keypoints': keypoints}
+        pose3d_dict = {'pose': pose3d, 'keypoints': keypoints, 'ids': np.array(ids)}
+
+        # add keypoints scheme if provided
+        if self.scheme_path is not None: 
+            scheme = io.load_toml(self.scheme_path)['scheme']
+            pose3d_dict['scheme'] = scheme
 
         return pose3d_dict
 

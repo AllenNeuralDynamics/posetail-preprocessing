@@ -69,6 +69,11 @@ class DukeMouseDataset(BaseDataset):
         bodyparts = [f'kpt{i}' for i in range(pose3d.shape[1])]
         pose3d_dict = {'pose': pose3d, 'keypoints': bodyparts}
 
+        # add keypoints scheme if provided
+        if self.scheme_path is not None: 
+            scheme = io.load_toml(self.scheme_path)['scheme']
+            pose3d_dict['scheme'] = scheme
+
         return pose3d_dict
 
     def generate_metadata(self):

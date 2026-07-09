@@ -1,0 +1,16 @@
+scheme = [
+    ['beakTopTip', 'beakTopR'], 
+    ['beakTopTip', 'beakTopL'], 
+    ['beakTopL', 'eyeL'], 
+    ['beakTopR', 'eyeR'], 
+    ['beakBotTip', 'beakBotR'], 
+    ['beakBotTip', 'beakBotL'], 
+    ['beakBotL', 'eyeL'], 
+    ['beakBotL', 'cheeckL'], 
+    ['beakBotR', 'cheeckR'], 
+    ['beakBotR', 'eyeR'], 
+    ['eyeL', 'cheeckL'], 
+    ['eyeL', 'Hdstg'], 
+    ['eyeR', 'cheeckR'], 
+    ['eyeR', 'Hdstg']
+]

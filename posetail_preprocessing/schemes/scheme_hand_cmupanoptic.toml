@@ -1,0 +1,56 @@
+scheme = [
+
+    # left hand
+    ['l_wrist', 'l_thumb_cmc'],
+    ['l_thumb_cmc', 'l_thumb_mcp'],
+    ['l_thumb_mcp', 'l_thumb_dip'],
+    ['l_thumb_dip', 'l_thumb_tip'],
+
+    ['l_wrist', 'l_index_finger_mcp'],
+    ['l_index_finger_mcp', 'l_index_finger_pip'],
+    ['l_index_finger_pip', 'l_index_finger_dip'],
+    ['l_index_finger_dip', 'l_index_finger_tip'],
+
+    ['l_wrist', 'l_middle_finger_mcp'],
+    ['l_middle_finger_mcp', 'l_middle_finger_pip'],
+    ['l_middle_finger_pip', 'l_middle_finger_dip'],
+    ['l_middle_finger_dip', 'l_middle_finger_tip'],
+
+    ['l_wrist', 'l_ring_finger_mcp'],
+    ['l_ring_finger_mcp', 'l_ring_finger_pip'],
+    ['l_ring_finger_pip', 'l_ring_finger_dip'],
+    ['l_ring_finger_dip', 'l_ring_finger_tip'],
+
+    ['l_wrist', 'l_pinky_mcp'],
+    ['l_pinky_mcp', 'l_pinky_pip'],
+    ['l_pinky_pip', 'l_pinky_dip'],
+    ['l_pinky_dip', 'l_pinky_tip'],
+
+
+    # right hand 
+    ['r_wrist', 'r_thumb_cmc'],
+    ['r_thumb_cmc', 'r_thumb_mcp'],
+    ['r_thumb_mcp', 'r_thumb_dip'],
+    ['r_thumb_dip', 'r_thumb_tip'],
+
+    ['r_wrist', 'r_index_finger_mcp'],
+    ['r_index_finger_mcp', 'r_index_finger_pip'],
+    ['r_index_finger_pip', 'r_index_finger_dip'],
+    ['r_index_finger_dip', 'r_index_finger_tip'],
+
+    ['r_wrist', 'r_middle_finger_mcp'],
+    ['r_middle_finger_mcp', 'r_middle_finger_pip'],
+    ['r_middle_finger_pip', 'r_middle_finger_dip'],
+    ['r_middle_finger_dip', 'r_middle_finger_tip'],
+
+    ['r_wrist', 'r_ring_finger_mcp'],
+    ['r_ring_finger_mcp', 'r_ring_finger_pip'],
+    ['r_ring_finger_pip', 'r_ring_finger_dip'],
+    ['r_ring_finger_dip', 'r_ring_finger_tip'],
+
+    ['r_wrist', 'r_pinky_mcp'],
+    ['r_pinky_mcp', 'r_pinky_pip'],
+    ['r_pinky_pip', 'r_pinky_dip'],
+    ['r_pinky_dip', 'r_pinky_tip'],
+
+]

@@ -101,6 +101,11 @@ class AcinosetDataset(BaseDataset):
         # combine coords and keypoints 
         pose3d_dict = {'pose': pose3d, 'keypoints': keypoints}
     
+        # add keypoints scheme if provided
+        if self.scheme_path is not None: 
+            scheme = io.load_toml(self.scheme_path)['scheme']
+            pose3d_dict['scheme'] = scheme
+
         return pose3d_dict
 
 

@@ -1,0 +1,17 @@
+scheme = [
+    # pose 
+    ['BodyCenter', 'Neck'],
+    ['Neck', 'Nose'],
+    ['Neck', 'lShoulder'],
+    ['lShoulder', 'lElbow'],
+    ['lElbow', 'lWrist'],
+    ['Neck', 'rShoulder'],
+    ['rShoulder', 'rElbow'],
+    ['rElbow', 'rWrist'],
+    ['BodyCenter', 'lHip'],
+    ['lHip', 'lKnee'],
+    ['lKnee', 'lAnkle'],
+    ['BodyCenter', 'rHip'],
+    ['rHip', 'rKnee'],
+    ['rKnee', 'rAnkle']
+]

@@ -91,6 +91,18 @@ def write_keypoints_toml(keypoints, outdir, default_name = 'keypoints'):
         toml.dump(keypoints_dict, f)
 
 
+def format_scheme_as_ix(scheme, keypoint_names):
+    ''' 
+    converts a scheme from keypoint names to indecies
+    '''
+    new_scheme = [] 
+    kpt_to_ix = dict(zip(keypoint_names, range(len(keypoint_names))))
+
+    for kpt1, kpt2 in scheme: 
+        new_scheme.append([kpt_to_ix[kpt1], kpt_to_ix[kpt2]])
+
+    return new_scheme
+
 def get_video_info(video_path):
 
     cap = cv2.VideoCapture(video_path)

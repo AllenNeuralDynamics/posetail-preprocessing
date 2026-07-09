@@ -116,10 +116,15 @@ class AniposeFlyDataset(BaseDataset):
         # undo transformation
         coords = rearrange(coords, 't n r -> (t n) r', t = n_frames, n = n_kpts)
         coords_transf = (coords + center).dot(np.linalg.inv(transf_matrix.T))
-
         pose3d = rearrange(coords_transf, '(t n) r -> 1 t n r', t = n_frames, r = 3)  # (n_subjects, time, kpts, 3)
+
         pose3d_dict = {'pose': pose3d, 'keypoints': unique_kpts}
 
+        # add keypoints scheme if provided
+        if self.scheme_path is not None: 
+            scheme = io.load_toml(self.scheme_path)['scheme']
+            pose3d_dict['scheme'] = scheme
+            
         return pose3d_dict
 
 

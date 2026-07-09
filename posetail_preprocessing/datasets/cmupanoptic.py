@@ -18,14 +18,18 @@ class CMUPanopticDataset(BaseDataset):
     def __init__(self, dataset_path, dataset_outpath, 
                  keypoints_path, scheme_path = None, 
                  dataset_name = 'cmupanoptic', 
-                 conf_thresh = None, overwrite = True):
+                 conf_thresh = None, overwrite = True, 
+                 save_pose_only = False):
         super().__init__(dataset_path, dataset_outpath)
 
         self.dataset_name = dataset_name
         self.keypoints_path = keypoints_path
         self.scheme_path = scheme_path 
-        self.conf_thresh = conf_thresh # filters keypoints based on confidence threshold   
+        self.conf_thresh = conf_thresh # filters keypoints based on confidence threshold 
+
+        # gives a little more control over this dataset since processing is slow  
         self.overwrite = overwrite
+        self.save_pose_only = save_pose_only
 
     def load_calibration(self, calib_path):
 
@@ -70,6 +74,7 @@ class CMUPanopticDataset(BaseDataset):
         all_data_paths = []
         all_kpts = []
         kpt_types = []
+        schemes = []
         start_frames = []
         n_frames = []
 
@@ -96,6 +101,11 @@ class CMUPanopticDataset(BaseDataset):
                 left_hand_kpts = ['l_' + kpt for kpt in kpts]
                 right_hand_kpts = ['r_' + kpt for kpt in kpts]
                 kpts = left_hand_kpts + right_hand_kpts
+
+            # load scheme 
+            scheme_path = os.path.join(self.scheme_path, f'scheme_{kpt_type}_cmupanoptic.toml')
+            scheme = io.load_toml(scheme_path)['scheme']
+            schemes.extend(scheme)
 
             # aggregate 3d files
             if len(data_paths) == 0: 
@@ -136,11 +146,16 @@ class CMUPanopticDataset(BaseDataset):
         all_coords = np.concatenate((coords_aligned), axis = 2)
         all_vis = np.concatenate((vis_aligned), axis = 2)
         all_kpts_flat = list(chain.from_iterable(all_kpts))
+
+        # TODO: add scheme 
+        scheme_ix = io.format_scheme_as_ix(scheme, all_kpts_flat)
         pose3d_dict = {
             'pose': all_coords, 
             'vis': all_vis, 
             'keypoints': all_kpts_flat, 
-            'ids': all_subject_ids, 
+            'scheme': scheme,
+            'scheme_ix': scheme_ix,
+            'ids': np.array(list(all_subject_ids)), 
             'start_frame': common_start, 
             'end_frame': common_end
         }
@@ -247,7 +262,10 @@ class CMUPanopticDataset(BaseDataset):
                 if len(bodies) == 0: 
                     continue
 
-                for body in bodies: 
+                for body in bodies:
+                    # don't process subject id -1 
+                    if body['id'] == -1: 
+                        continue
                     ids.add(body['id'])
 
             except (FileNotFoundError, json.JSONDecodeError) as e: 
@@ -345,9 +363,15 @@ class CMUPanopticDataset(BaseDataset):
                     continue
 
                 for subject in subjects: 
+
                     id = subject['id']
+
+                    if id not in ids_dict: 
+                        continue 
+
                     index = ids_dict[id]
                     pose3d, visibilities = self._get_pose3d(subject, n_kpts, kpt_type, conf_thresh = conf_thresh)
+
                     coords[index, i, :, :] = pose3d 
                     vis[index, i, :, :] = visibilities
 
@@ -476,36 +500,37 @@ class CMUPanopticDataset(BaseDataset):
             os.makedirs(outpath, exist_ok = True)
 
             # load and format the 3d annotations
-            print(session)
             pose_dict = self.load_pose3d(session_path)
             common_start = pose_dict.pop('start_frame')
             common_end = pose_dict.pop('end_frame')
             pose_dict = self._subset_pose_dict(pose_dict, n_frames = split_frames)
             io.save_npz(pose_dict, outpath, fname = 'pose3d')
 
-            # put videos/frames in the desired format
-            if split == 'test':  
-                # for test set, save as videos
-                video_info = self._process_session_test(
-                    session_path, outpath, cam_names, 
-                    common_start, common_end)
-            else:
-                # for train and validation sets, deserialize the camera videos 
-                # and save as images  
-                video_info = self._process_session_train(
-                    session_path, outpath, cam_names, 
-                    split_frames, common_start, common_end)
+            if not self.save_pose_only: 
 
-            cam_dict = {
-                'intrinsic_matrices': intrinsics, 
-                'extrinsic_matrices': extrinsics, 
-                'distortion_matrices': distortions,
-                'num_cameras': len(intrinsics)}
-            cam_dict.update(video_info)
+                # put videos/frames in the desired format
+                if split == 'test':  
+                    # for test set, save as videos
+                    video_info = self._process_session_test(
+                        session_path, outpath, cam_names, 
+                        common_start, common_end)
+                else:
+                    # for train and validation sets, deserialize the camera videos 
+                    # and save as images  
+                    video_info = self._process_session_train(
+                        session_path, outpath, cam_names, 
+                        split_frames, common_start, common_end)
 
-            # save camera metadata
-            io.save_yaml(data = cam_dict, outpath = outpath, 
-                    fname = 'metadata.yaml')
+                cam_dict = {
+                    'intrinsic_matrices': intrinsics, 
+                    'extrinsic_matrices': extrinsics, 
+                    'distortion_matrices': distortions,
+                    'num_cameras': len(intrinsics)}
+                cam_dict.update(video_info)
+
+                # save camera metadata
+                io.save_yaml(data = cam_dict, outpath = outpath, 
+                        fname = 'metadata.yaml')
 
     def _process_session_train(self, session_path, trial_outpath, cam_names,
                                split_frames = None, start_frame = None, end_frame = None):

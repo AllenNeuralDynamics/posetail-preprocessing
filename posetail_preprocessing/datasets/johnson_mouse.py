@@ -40,11 +40,13 @@ def camera_from_path(calib_path):
 class JohnsonMouseDataset(BaseDataset): 
 
     def __init__(self, dataset_path, dataset_outpath, 
-                 dataset_name = 'johnson-mouse', conf_thresh = 0.5):
+                 dataset_name = 'johnson-mouse', 
+                 scheme_path = None, conf_thresh = 0.5):
         super().__init__(dataset_path, dataset_outpath)
 
         self.dataset_name = dataset_name
         self.conf_thresh = conf_thresh
+        self.scheme_path = scheme_path
 
     def load_calibration(self, calib_fnames):
 
@@ -82,9 +84,14 @@ class JohnsonMouseDataset(BaseDataset):
 
         # undo transformation
         coords = rearrange(coords, 't n r -> (t n) r', t = n_frames, n = n_kpts)
-
         pose3d = rearrange(coords, '(t n) r -> 1 t n r', t = n_frames, r = 3)  # (n_subjects, time, kpts, 3)
+        
         pose3d_dict = {'pose': pose3d, 'keypoints': unique_kpts}
+
+        # add keypoints scheme if provided
+        if self.scheme_path is not None: 
+            scheme = io.load_toml(self.scheme_path)['scheme']
+            pose3d_dict['scheme'] = scheme
 
         return pose3d_dict
 

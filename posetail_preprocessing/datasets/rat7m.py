@@ -75,14 +75,14 @@ class Rat7MDataset(BaseDataset):
 
         mat = scipy.io.loadmat(data_path)
         d = dict(zip(mat['mocap'].dtype.names, mat['mocap'].item()))
-        bodyparts = mat['mocap'].dtype.names
+        keypoints = mat['mocap'].dtype.names
 
         coords = []
-        for bp in bodyparts:
-            coords.append(d[bp])
+        for kp in keypoints:
+            coords.append(d[kp])
 
         coords = np.array(coords)
-        pose3d = np.expand_dims(coords.swapaxes(0, 1), axis = 0) # (n_subjects, time, bodyparts, 3)
+        pose3d = np.expand_dims(coords.swapaxes(0, 1), axis = 0) # (n_subjects, time, keypoints, 3)
 
         # filter out inaccurate keypoints 
         pose3d = filter_coords(
@@ -91,7 +91,12 @@ class Rat7MDataset(BaseDataset):
             thresh = self.thresh, 
             percentile = self.percentile)
         
-        pose3d_dict = {'pose': pose3d, 'keypoints': bodyparts}
+        pose3d_dict = {'pose': pose3d, 'keypoints': keypoints}
+
+        # add keypoints scheme if provided
+        if self.scheme_path is not None: 
+            scheme = io.load_toml(self.scheme_path)['scheme']
+            pose3d_dict['scheme'] = scheme
 
         return pose3d_dict
     

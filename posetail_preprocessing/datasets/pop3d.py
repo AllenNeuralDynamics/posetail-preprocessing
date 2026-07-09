@@ -84,6 +84,11 @@ class POPDataset(BaseDataset):
         subject_coords = np.stack(subject_coords)
         pose3d_dict = {'pose': subject_coords, 'keypoints': unique_kpts, 'ids': ids}
 
+        # add keypoints scheme if provided
+        if self.scheme_path is not None: 
+            scheme = io.load_toml(self.scheme_path)['scheme']
+            pose3d_dict['scheme'] = scheme
+
         return pose3d_dict
 
 

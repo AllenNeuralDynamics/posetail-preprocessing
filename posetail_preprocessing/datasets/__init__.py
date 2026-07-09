@@ -9,10 +9,9 @@ from .dex_ycb import DexYCBDataset
 from .duke_mouse import DukeMouseDataset
 from .johnson_mouse import JohnsonMouseDataset
 from .jarvis_monkey import JarvisMonkeyDataset
-from .voigts_mouse import VoigtsMouseDataset
 from .kubric_multiview import KubricMultiviewDataset
 from .pairr24m import PairR24MDataset
 from .pop3d import POPDataset
 from .rat7m import Rat7MDataset
-from .sober_bird import SoberBirdDataset
 from .zef3d import ZefDataset
+from .voigts_mouse import VoigtsMouseDataset
